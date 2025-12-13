@@ -32,10 +32,9 @@ DISCORD_MAX_UPLOAD=int(os.getenv("DISCORD_MAX_UPLOAD",str(8*1024*1024)))
 HEAD_SIZE_LIMIT=DISCORD_MAX_UPLOAD
 
 logging.basicConfig(level=logging.DEBUG if DEBUG_FETCH else logging.INFO)
-logger=logging.getLogger("spiciest-nsfw-compress")
+logger=logging.getLogger("spiciest-nsfw-final")
 
 _token_split_re=re.compile(r"[^a-z0-9]+")
-
 _seed_gif_tags=[
 "hentai","ecchi","porn","sex","oral","anal","cum","cumshot","orgasm","sex_scene",
 "breasts","big breasts","big_boobs","oppai","huge breasts","milf","mommy","mature",
@@ -321,10 +320,9 @@ async def fetch_from_otakugifs(session,positive):
     try:
         q=map_tag_for_provider("otakugifs",positive)
         valid_reactions=["kiss","hug","slap","punch","wink","dance","cuddle","poke"]
-        reaction="waifu"
+        reaction="kiss"
         for v in valid_reactions:
-            if v in q:
-                reaction=v; break
+            if v in q: reaction=v; break
         url=f"https://otakugifs.xyz/api/gif?reaction={quote_plus(reaction)}"
         async with session.get(url,timeout=REQUEST_TIMEOUT) as resp:
             if resp.status!=200:
@@ -561,12 +559,14 @@ async def attempt_get_media_bytes(session,gif_url):
 
 async def fetch_gif(user_id):
     user_key=str(user_id)
-    sent=data["sent_history"].setdefault(user_key,[])
+    sent_list=data["sent_history"].setdefault(user_key,[])
+    sent_set=set(sent_list)
     providers=build_provider_pool()
     if not providers:
-        if DEBUG_FETCH: logger.debug("No providers available."); return None,None,None
+        if DEBUG_FETCH: logger.debug("No providers available.")
+        return None,None,None,None
     async with aiohttp.ClientSession() as session:
-        tried=set(); attempt=0
+        attempt=0
         while attempt<FETCH_ATTEMPTS:
             attempt+=1
             if TRUE_RANDOM:
@@ -574,46 +574,46 @@ async def fetch_gif(user_id):
             else:
                 global _provider_cycle_deque,_last_cycle_refresh
                 if not _provider_cycle_deque: _provider_cycle_deque=deque(build_provider_pool())
-                if not _provider_cycle_deque: return None,None,None
+                if not _provider_cycle_deque: return None,None,None,None
                 provider=_provider_cycle_deque.popleft(); _provider_cycle_deque.append(provider)
-                if DEBUG_FETCH: logger.debug(f"provider chosen: {provider}")
-            tried.add(provider)
-            fetcher=PROVIDER_FETCHERS.get(provider)
-            if not fetcher: continue
             positive=random.choice(GIF_TAGS)
             if DEBUG_FETCH: logger.debug(f"[fetch_gif] attempt {attempt} provider={provider} positive='{positive}'")
+            fetcher=PROVIDER_FETCHERS.get(provider)
+            if not fetcher: continue
             try:
                 gif_url,name_hint,meta=await fetcher(session,positive)
             except Exception as e:
-                if DEBUG_FETCH: logger.debug(f"Fetcher exception for {provider}: {e}"); continue
+                if DEBUG_FETCH: logger.debug(f"fetcher exception for {provider}: {e}")
+                continue
             if not gif_url:
                 if DEBUG_FETCH: logger.debug(f"{provider} returned no url.")
-                if len(tried)>=len(providers): tried.clear()
                 continue
             if filename_has_block_keyword(gif_url): continue
             if contains_illegal_indicators((gif_url or "")+" "+(str(meta) or "")): continue
             if _tag_is_disallowed(str(meta or "")): continue
-            gif_hash=hashlib.sha1((gif_url or name_hint or "").encode()).hexdigest()
-            if gif_hash in sent:
-                if DEBUG_FETCH: logger.debug(f"Already sent gif hash for {gif_url}; skipping."); continue
+            gif_hash=hashlib.sha1((gif_url or "").encode()).hexdigest()
+            if gif_hash in sent_set:
+                if DEBUG_FETCH: logger.debug("already sent to user; skipping")
+                continue
             b,ctype,reason=await attempt_get_media_bytes(session,gif_url)
             if DEBUG_FETCH: logger.debug(f"attempt_get_media_bytes -> provider={provider} url={gif_url} reason={reason} bytes_ok={bool(b)} ctype={ctype}")
-            sent.append(gif_hash)
-            if len(sent)>MAX_USED_GIFS_PER_USER: del sent[:len(sent)-MAX_USED_GIFS_PER_USER]
-            data["sent_history"][user_key]=sent
+            # mark as used (whether bytes available or only url fallback) and persist
+            sent_set.add(gif_hash)
+            sent_list.append(gif_hash)
+            if len(sent_list)>MAX_USED_GIFS_PER_USER:
+                del sent_list[:len(sent_list)-MAX_USED_GIFS_PER_USER]
+            data["sent_history"][user_key]=sent_list
             try:
                 with open(DATA_FILE,"w") as f: json.dump(data,f,indent=2)
             except Exception: pass
-            if b:
-                ext=""
-                try:
-                    parsed=urlparse(gif_url); ext=os.path.splitext(parsed.path)[1] or ".gif"
-                    if len(ext)>6: ext=".gif"
-                except Exception: ext=".gif"
-                name=f"{provider}_{hashlib.sha1(gif_url.encode()).hexdigest()[:10]}{ext}"
-                return b,name,gif_url,ctype
-            else:
-                return None,None,gif_url,None
+            ext=""
+            try:
+                parsed=urlparse(gif_url); ext=os.path.splitext(parsed.path)[1] or ".gif"
+                if len(ext)>6: ext=".gif"
+            except Exception:
+                ext=".gif"
+            name=f"{provider}_{hashlib.sha1(gif_url.encode()).hexdigest()[:10]}{ext}"
+            return b,name,gif_url,ctype
         if DEBUG_FETCH: logger.debug("fetch_gif exhausted attempts.")
         return None,None,None,None
 
@@ -635,8 +635,8 @@ def try_compress_bytes(b,ctype,max_size):
         if fmt.upper() in ("GIF","WEBP"):
             frames=[f.copy().convert("RGBA") for f in ImageSequence.Iterator(img)]
             w,h=frames[0].size
-            for scale_step in range(1,12):
-                scale=0.95**scale_step
+            for step in range(1,13):
+                scale=0.95**step
                 new_size=(max(1,int(w*scale)),max(1,int(h*scale)))
                 out=io.BytesIO()
                 resized=[fr.resize(new_size,Image.LANCZOS) for fr in frames]
@@ -649,7 +649,7 @@ def try_compress_bytes(b,ctype,max_size):
             return None
         else:
             w,h=img.size
-            for step in range(1,12):
+            for step in range(1,13):
                 scale=0.95**step
                 new_size=(max(1,int(w*scale)),max(1,int(h*scale)))
                 out=io.BytesIO()
@@ -686,35 +686,35 @@ async def send_embed_with_media(text_channel,member,embed,gif_bytes,gif_name,gif
                     if gif_url and gif_url not in (dm_embed.description or ""): dm_embed.description=(dm_embed.description or "")+f"\n\n[View media here]({gif_url})"
                     await member.send(dm_embed)
                 except Exception as e2: logger.debug(f"DM fallback failed: {e2}")
-        else:
-            if gif_bytes:
-                compressed=try_compress_bytes(gif_bytes,ctype,max_upload)
-                if compressed and len(compressed)<=max_upload:
+            return
+        if gif_bytes:
+            compressed=try_compress_bytes(gif_bytes,ctype,max_upload)
+            if compressed and len(compressed)<=max_upload:
+                try:
+                    file_server=discord.File(io.BytesIO(compressed),filename=gif_name)
+                    embed.set_image(url=f"attachment://{gif_name}")
+                    if text_channel: await text_channel.send(embed=embed,file=file_server)
+                except Exception:
+                    if text_channel:
+                        if gif_url and gif_url not in (embed.description or ""): embed.description=(embed.description or "")+f"\n\n[View media here]({gif_url})"
+                        await text_channel.send(embed=embed)
+                try:
+                    dm_file=discord.File(io.BytesIO(compressed),filename=gif_name)
+                    await member.send(embed=embed,file=dm_file)
+                except Exception:
                     try:
-                        file_server=discord.File(io.BytesIO(compressed),filename=gif_name)
-                        embed.set_image(url=f"attachment://{gif_name}")
-                        if text_channel: await text_channel.send(embed=embed,file=file_server)
-                    except Exception:
-                        if text_channel:
-                            if gif_url and gif_url not in (embed.description or ""): embed.description=(embed.description or "")+f"\n\n[View media here]({gif_url})"
-                            await text_channel.send(embed=embed)
-                    try:
-                        dm_file=discord.File(io.BytesIO(compressed),filename=gif_name)
-                        await member.send(embed=embed,file=dm_file)
-                    except Exception:
-                        try:
-                            dm_embed=make_embed(embed.title or "Media",embed.description or "",member,kind="join")
-                            if gif_url and gif_url not in (dm_embed.description or ""): dm_embed.description=(dm_embed.description or "")+f"\n\n[View media here]({gif_url})"
-                            await member.send(dm_embed)
-                        except Exception as e: logger.debug(f"DM link only failed: {e}")
-                    return
-            if gif_url and gif_url not in (embed.description or ""): embed.description=(embed.description or "")+f"\n\n[View media here]({gif_url})"
-            if text_channel: await text_channel.send(embed=embed)
-            try:
-                dm_embed=make_embed(embed.title or "Media",embed.description or "",member,kind="join")
-                if gif_url and gif_url not in (dm_embed.description or ""): dm_embed.description=(dm_embed.description or "")+f"\n\n[View media here]({gif_url})"
-                await member.send(dm_embed)
-            except Exception as e: logger.debug(f"DM link only failed: {e}")
+                        dm_embed=make_embed(embed.title or "Media",embed.description or "",member,kind="join")
+                        if gif_url and gif_url not in (dm_embed.description or ""): dm_embed.description=(dm_embed.description or "")+f"\n\n[View media here]({gif_url})"
+                        await member.send(dm_embed)
+                    except Exception as e: logger.debug(f"DM link only failed: {e}")
+                return
+        if gif_url and gif_url not in (embed.description or ""): embed.description=(embed.description or "")+f"\n\n[View media here]({gif_url})"
+        if text_channel: await text_channel.send(embed=embed)
+        try:
+            dm_embed=make_embed(embed.title or "Media",embed.description or "",member,kind="join")
+            if gif_url and gif_url not in (dm_embed.description or ""): dm_embed.description=(dm_embed.description or "")+f"\n\n[View media here]({gif_url})"
+            await member.send(dm_embed)
+        except Exception as e: logger.debug(f"DM link only failed: {e}")
     except Exception as e:
         logger.warning(f"unexpected error in send_embed_with_media: {e}")
         try:
@@ -886,9 +886,6 @@ async def on_ready():
     for p in PROVIDER_FETCHERS.keys():
         key_ok=True
         if p=="waifu_it" and not WAIFUIT_API_KEY: key_ok=False
-        if p in ("danbooru","gelbooru","konachan","rule34") and not (DANBOORU_API_KEY or GELBOORU_API_KEY):
-            # these providers may work without keys; we only flag false if you required auth
-            key_ok=True
         available.append((p,key_ok,data.get("provider_weights",{}).get(p,1)))
     logger.info("Provider availability:")
     for t in available: logger.info(t)
@@ -904,8 +901,7 @@ async def on_voice_state_update(member,before,after):
             if vc:
                 if vc.channel.id!=after.channel.id: await vc.move_to(after.channel)
             else: await after.channel.connect()
-        except Exception as e:
-            logger.warning(f"VC join error: {e}")
+        except Exception as e: logger.warning(f"VC join error: {e}")
         raw=random.choice(JOIN_GREETINGS); msg=raw.format(display_name=member.display_name)
         data["join_counts"][str(member.id)]=data["join_counts"].get(str(member.id),0)+1
         embed=make_embed("Welcome!",msg,member,"join",data["join_counts"][str(member.id)])
