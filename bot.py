@@ -21,7 +21,7 @@ except Exception:
 # ---------- Config ----------
 TOKEN = os.getenv("TOKEN", "")
 WAIFUIM_API_KEY = os.getenv("WAIFUIM_API_KEY", "")
-WAIFUIT_API_KEY = os.getenv("WAIFUIT_API_KEY", "")
+WAIFUUIT_API_KEY = os.getenv("WAIFUIT_API_KEY", "")
 DANBOORU_USER = os.getenv("DANBOORU_USER", "")
 DANBOORU_API_KEY = os.getenv("DANBOORU_API_KEY", "")
 GELBOORU_API_KEY = os.getenv("GELBOORU_API_KEY", "")
@@ -249,8 +249,7 @@ async def fetch_from_waifu_pics(session, positive):
             if contains_illegal_indicators(json.dumps(payload) + " " + (category or "")): return None, None, None
             extract_and_add_tags_from_meta(json.dumps(payload), GIF_TAGS, data)
             return gif_url, f"waifu_pics_{category}", payload
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_waifu_pics error: {e}")
+    except Exception:
         return None, None, None
 
 async def fetch_from_waifu_im(session, positive):
@@ -263,7 +262,6 @@ async def fetch_from_waifu_im(session, positive):
             headers["Authorization"] = f"Bearer {WAIFUIM_API_KEY}"
         async with session.get(base, params=params, headers=headers or None, timeout=REQUEST_TIMEOUT) as resp:
             if resp.status != 200:
-                if DEBUG_FETCH: logger.debug(f"waifu.im nsfw search -> {resp.status}")
                 return None, None, None
             payload = await resp.json()
             images = payload.get("images") or payload.get("data") or []
@@ -274,21 +272,18 @@ async def fetch_from_waifu_im(session, positive):
             if contains_illegal_indicators(json.dumps(img) + " " + (q or "")): return None, None, None
             extract_and_add_tags_from_meta(str(img.get("tags", "")), GIF_TAGS, data)
             return gif_url, f"waifu_im_{q}", img
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_waifu_im error: {e}")
+    except Exception:
         return None, None, None
 
 async def fetch_from_waifu_it(session, positive):
     try:
-        if not WAIFUIT_API_KEY:
-            if DEBUG_FETCH: logger.debug("waifu.it skipped: key missing")
+        if not WAIFUUIT_API_KEY:
             return None, None, None
         q = map_tag_for_provider("waifu_it", positive)
         endpoint = f"https://waifu.it/api/v4/{quote_plus(q)}"
-        headers = {"Authorization": WAIFUIT_API_KEY}
+        headers = {"Authorization": WAIFUUIT_API_KEY}
         async with session.get(endpoint, headers=headers, timeout=REQUEST_TIMEOUT) as resp:
             if resp.status != 200:
-                if DEBUG_FETCH: logger.debug(f"waifu.it {endpoint} -> {resp.status}")
                 return None, None, None
             payload = await resp.json()
             gif_url = payload.get("url") or payload.get("image") or (payload.get("data") and payload["data"].get("url"))
@@ -296,8 +291,7 @@ async def fetch_from_waifu_it(session, positive):
             if contains_illegal_indicators(json.dumps(payload) + " " + (q or "")): return None, None, None
             extract_and_add_tags_from_meta(json.dumps(payload), GIF_TAGS, data)
             return gif_url, f"waifu_it_{q}", payload
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_waifu_it error: {e}")
+    except Exception:
         return None, None, None
 
 async def fetch_from_nekos_best(session, positive):
@@ -306,7 +300,6 @@ async def fetch_from_nekos_best(session, positive):
         url = f"https://nekos.best/api/v2/{quote_plus(q)}?amount=1"
         async with session.get(url, timeout=REQUEST_TIMEOUT) as resp:
             if resp.status != 200:
-                if DEBUG_FETCH: logger.debug(f"nekos.best {q} -> {resp.status}")
                 return None, None, None
             payload = await resp.json()
             results = payload.get("results") or []
@@ -317,8 +310,7 @@ async def fetch_from_nekos_best(session, positive):
             if contains_illegal_indicators(json.dumps(r) + " " + (q or "")): return None, None, None
             extract_and_add_tags_from_meta(json.dumps(r), GIF_TAGS, data)
             return gif_url, f"nekos_best_{q}", r
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_nekos_best error: {e}")
+    except Exception:
         return None, None, None
 
 async def fetch_from_nekos_life(session, positive):
@@ -327,7 +319,6 @@ async def fetch_from_nekos_life(session, positive):
         url = f"https://nekos.life/api/v2/img/{quote_plus(q)}"
         async with session.get(url, timeout=REQUEST_TIMEOUT) as resp:
             if resp.status != 200:
-                if DEBUG_FETCH: logger.debug(f"nekos.life {q} -> {resp.status}")
                 return None, None, None
             payload = await resp.json()
             gif_url = payload.get("url") or payload.get("image") or payload.get("result")
@@ -335,8 +326,7 @@ async def fetch_from_nekos_life(session, positive):
             if contains_illegal_indicators(json.dumps(payload) + " " + (q or "")): return None, None, None
             extract_and_add_tags_from_meta(json.dumps(payload), GIF_TAGS, data)
             return gif_url, f"nekos_life_{q}", payload
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_nekos_life error: {e}")
+    except Exception:
         return None, None, None
 
 async def fetch_from_nekos_moe(session, positive):
@@ -345,7 +335,6 @@ async def fetch_from_nekos_moe(session, positive):
         url = f"https://nekos.moe/api/v3/gif/random?tag={quote_plus(q)}"
         async with session.get(url, timeout=REQUEST_TIMEOUT) as resp:
             if resp.status != 200:
-                if DEBUG_FETCH: logger.debug(f"nekos.moe -> {resp.status}")
                 return None, None, None
             payload = await resp.json()
             images = payload.get("images") or payload.get("data") or []
@@ -357,8 +346,7 @@ async def fetch_from_nekos_moe(session, positive):
             if contains_illegal_indicators(json.dumps(item) + " " + (q or "")): return None, None, None
             extract_and_add_tags_from_meta(json.dumps(item), GIF_TAGS, data)
             return gif_url, f"nekos_moe_{q}", item
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_nekos_moe error: {e}")
+    except Exception:
         return None, None, None
 
 async def fetch_from_nekos_api(session, positive):
@@ -370,7 +358,6 @@ async def fetch_from_nekos_api(session, positive):
             params["categories"] = q
         async with session.get(url, params=params, timeout=REQUEST_TIMEOUT) as resp:
             if resp.status != 200:
-                if DEBUG_FETCH: logger.debug(f"nekos_api -> {resp.status}")
                 return None, None, None
             payload = await resp.json()
             images = payload.get("data") or payload.get("images") or []
@@ -387,8 +374,47 @@ async def fetch_from_nekos_api(session, positive):
             if contains_illegal_indicators(json.dumps(item) + " " + (q or "")): return None, None, None
             extract_and_add_tags_from_meta(json.dumps(item), GIF_TAGS, data)
             return gif_url, f"nekos_api_{q}", item
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_nekos_api error: {e}")
+    except Exception:
+        return None, None, None
+
+async def fetch_from_otakugifs(session, positive):
+    # ensure this function exists (fixes NameError)
+    try:
+        q = map_tag_for_provider("otakugifs", positive)
+        valid_reactions = ["kiss", "hug", "slap", "punch", "wink", "dance", "cuddle", "poke"]
+        reaction = "kiss"
+        for v in valid_reactions:
+            if v in q:
+                reaction = v
+                break
+        url = f"https://otakugifs.xyz/api/gif?reaction={quote_plus(reaction)}"
+        async with session.get(url, timeout=REQUEST_TIMEOUT) as resp:
+            if resp.status != 200:
+                return None, None, None
+            payload = await resp.json()
+            # payload looks like {"url": "..."} or {"gif": "..."}
+            gif_url = payload.get("url") or payload.get("gif") or payload.get("file")
+            if not gif_url or filename_has_block_keyword(gif_url): return None, None, None
+            if contains_illegal_indicators(json.dumps(payload) + " " + (q or "")): return None, None, None
+            extract_and_add_tags_from_meta(json.dumps(payload), GIF_TAGS, data)
+            return gif_url, f"otakugifs_{reaction}", payload
+    except Exception:
+        return None, None, None
+
+async def fetch_from_animegirls_online(session, positive):
+    try:
+        q = map_tag_for_provider("animegirls_online", positive)
+        url = f"https://animegirls.online/api/random?tag={quote_plus(q)}"
+        async with session.get(url, timeout=REQUEST_TIMEOUT) as resp:
+            if resp.status != 200:
+                return None, None, None
+            payload = await resp.json()
+            gif_url = payload.get("url") or payload.get("image")
+            if not gif_url or filename_has_block_keyword(gif_url): return None, None, None
+            if contains_illegal_indicators(json.dumps(payload) + " " + (q or "")): return None, None, None
+            extract_and_add_tags_from_meta(json.dumps(payload), GIF_TAGS, data)
+            return gif_url, f"animegirls_online_{q}", payload
+    except Exception:
         return None, None, None
 
 async def fetch_from_danbooru(session, positive):
@@ -402,7 +428,6 @@ async def fetch_from_danbooru(session, positive):
             auth = aiohttp.BasicAuth(DANBOORU_USER, DANBOORU_API_KEY)
         async with session.get(url, params=params, timeout=REQUEST_TIMEOUT, auth=auth) as resp:
             if resp.status != 200:
-                if DEBUG_FETCH: logger.debug(f"danbooru -> {resp.status}")
                 return None, None, None
             payload = await resp.json()
             if not payload: return None, None, None
@@ -416,8 +441,7 @@ async def fetch_from_danbooru(session, positive):
                 extract_and_add_tags_from_meta(tags_text, GIF_TAGS, data)
                 return gif_url, f"danbooru_{q}", item
             return None, None, None
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_danbooru error: {e}")
+    except Exception:
         return None, None, None
 
 async def fetch_from_gelbooru(session, positive):
@@ -428,7 +452,6 @@ async def fetch_from_gelbooru(session, positive):
         params = {"page": "dapi", "s": "post", "q": "index", "json": 1, "limit": 50, "tags": tags}
         async with session.get(url, params=params, timeout=REQUEST_TIMEOUT) as resp:
             if resp.status != 200:
-                if DEBUG_FETCH: logger.debug(f"gelbooru -> {resp.status}")
                 return None, None, None
             payload = await resp.json()
             posts = payload if isinstance(payload, list) else (payload.get("post") or payload.get("posts") or [])
@@ -442,8 +465,7 @@ async def fetch_from_gelbooru(session, positive):
                 extract_and_add_tags_from_meta(json.dumps(item), GIF_TAGS, data)
                 return gif_url, f"gelbooru_{q}", item
             return None, None, None
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_gelbooru error: {e}")
+    except Exception:
         return None, None, None
 
 async def fetch_from_konachan(session, positive):
@@ -454,7 +476,6 @@ async def fetch_from_konachan(session, positive):
         params = {"tags": tags, "limit": 50}
         async with session.get(url, params=params, timeout=REQUEST_TIMEOUT) as resp:
             if resp.status != 200:
-                if DEBUG_FETCH: logger.debug(f"konachan -> {resp.status}")
                 return None, None, None
             payload = await resp.json()
             if not payload: return None, None, None
@@ -467,8 +488,7 @@ async def fetch_from_konachan(session, positive):
                 extract_and_add_tags_from_meta(json.dumps(item), GIF_TAGS, data)
                 return gif_url, f"konachan_{q}", item
             return None, None, None
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_konachan error: {e}")
+    except Exception:
         return None, None, None
 
 async def fetch_from_rule34(session, positive):
@@ -479,7 +499,6 @@ async def fetch_from_rule34(session, positive):
         params = {"page": "dapi", "s": "post", "q": "index", "json": 1, "limit": 50, "tags": tags}
         async with session.get(url, params=params, timeout=REQUEST_TIMEOUT) as resp:
             if resp.status != 200:
-                if DEBUG_FETCH: logger.debug(f"rule34 -> {resp.status}")
                 return None, None, None
             payload = await resp.json()
             if not payload: return None, None, None
@@ -492,10 +511,10 @@ async def fetch_from_rule34(session, positive):
                 extract_and_add_tags_from_meta(json.dumps(item), GIF_TAGS, data)
                 return gif_url, f"rule34_{q}", item
             return None, None, None
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"fetch_from_rule34 error: {e}")
+    except Exception:
         return None, None, None
 
+# PROVIDER_FETCHERS built after all fetchers are defined
 PROVIDER_FETCHERS = {
     "waifu_pics": fetch_from_waifu_pics,
     "waifu_im": fetch_from_waifu_im,
@@ -672,8 +691,7 @@ def try_compress_bytes(b, ctype, max_size):
                 if out.getbuffer().nbytes <= max_size:
                     return out.getvalue()
             return None
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"compression failed: {e}")
+    except Exception:
         return None
 
 def make_embed(title, desc, member, kind="nsfw", count=None):
@@ -940,7 +958,7 @@ async def on_ready():
     available = []
     for p in PROVIDER_FETCHERS.keys():
         key_ok = True
-        if p == "waifu_it" and not WAIFUIT_API_KEY:
+        if p == "waifu_it" and not WAIFUUIT_API_KEY:
             key_ok = False
         if p == "danbooru" and (not DANBOORU_API_KEY or not DANBOORU_USER):
             key_ok = False
