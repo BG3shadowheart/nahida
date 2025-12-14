@@ -1,4 +1,3 @@
-# bot2.py
 import os
 import io
 import json
@@ -18,7 +17,6 @@ try:
 except Exception:
     Image = None
 
-# ---------- Config ----------
 TOKEN = os.getenv("TOKEN", "")
 WAIFUIM_API_KEY = os.getenv("WAIFUIM_API_KEY", "")
 WAIFUIT_API_KEY = os.getenv("WAIFUIT_API_KEY", "")
@@ -45,19 +43,18 @@ VC_CHANNEL_ID = int(os.getenv("VC_CHANNEL_ID", "1371916812903780573"))
 logging.basicConfig(level=logging.DEBUG if DEBUG_FETCH else logging.INFO)
 logger = logging.getLogger("spiciest-nsfw")
 
-# ---------- Helpers & Filters ----------
 _token_split_re = re.compile(r"[^a-z0-9]+")
 
 ILLEGAL_TAGS = [
     "underage", "minor", "child", "loli", "shota", "young", "agegap",
-    "rape", "sexual violence", "bestiality", "zoophilia", "bestial",
-    "scat", "fisting", "incest", "pedo", "pedophile", "creampie"
+    "bestiality", "zoophilia", "bestial",
+    "scat", "fisting", "incest", "pedo", "pedophile"
 ]
-FILENAME_BLOCK_KEYWORDS = ["orgy", "creampie", "facial", "scat", "fisting", "bestiality"]
+FILENAME_BLOCK_KEYWORDS = ["orgy", "scat", "fisting", "bestiality"]
 
 EXCLUDE_TAGS = [
     "loli", "shota", "child", "minor", "underage", "young", "schoolgirl", "age_gap",
-    "pedo", "pedophile", "bestiality", "zoophilia", "rape", "sexual violence"
+    "pedo", "pedophile", "bestiality", "zoophilia"
 ]
 
 def _normalize_text(s: str) -> str:
@@ -128,7 +125,6 @@ def extract_and_add_tags_from_meta(meta_text: str, GIF_TAGS, data_save):
             continue
         add_tag_to_gif_tags(tok, GIF_TAGS, data_save)
 
-# ---------- Persistence ----------
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, "w") as f:
         json.dump({"provider_weights": {}, "sent_history": {}, "gif_tags": []}, f, indent=2)
@@ -141,7 +137,8 @@ data.setdefault("sent_history", {})
 data.setdefault("gif_tags", [])
 
 _seed_gif_tags = [
-    "hentai", "ecchi", "porn", "sex", "oral", "anal", "cum", "cumshot", "orgasm", "sex_scene",
+    "armipit", "hentai", "ecchi", "porn", "sex", "oral", "anal", "cum", "cumshot", "orgasm",
+    "sex_scene", "hardcore", "milf", "big boobs", "big ass", "blowjob", "lick", "pussy",
     "breasts", "big_breasts", "oppai", "huge_breasts", "milf", "mature",
     "thick", "thighs", "ass", "booty", "lingerie", "panties", "stockings", "garter",
     "bikini", "swimsuit", "cleavage", "underboob", "sideboob",
@@ -149,7 +146,8 @@ _seed_gif_tags = [
     "bdsm", "bondage", "spanking", "wet", "waifu", "neko", "maid", "cosplay",
     "threesome", "group", "bukkake", "nipples", "strapon", "double_penetration",
     "masturbation", "footjob", "handjob", "fingering", "cum_on_face", "facesitting",
-    "pegging", "public", "group_sex", "yuri", "lesbian"
+    "pegging", "public", "group_sex", "yuri", "lesbian", "rap", "facial", "creampie",
+    "sexual_assault"
 ]
 
 persisted = _dedupe_preserve_order(data.get("gif_tags", []))
@@ -174,7 +172,6 @@ async def autosave_task():
     except Exception as e:
         logger.warning(f"Autosave failed: {e}")
 
-# ---------- Provider terms & mapping (NSFW) ----------
 PROVIDER_TERMS = {
     "waifu_pics": ["waifu", "neko", "blowjob"],
     "waifu_im": ["hentai", "ero", "ecchi", "milf", "oral", "oppai", "cum", "anal"],
@@ -203,7 +200,6 @@ def map_tag_for_provider(provider: str, tag: str) -> str:
         return random.choice(pool)
     return t or "hentai"
 
-# ---------- HTTP helpers ----------
 async def _head_url(session, url, timeout=REQUEST_TIMEOUT):
     try:
         async with session.head(url, timeout=timeout, allow_redirects=True) as resp:
@@ -234,7 +230,6 @@ async def _download_bytes_with_limit(session, url, size_limit=HEAD_SIZE_LIMIT, t
         if DEBUG_FETCH: logger.debug(f"GET exception for {url}: {e}")
         return None, None
 
-# ---------- Provider fetchers (NSFW) ----------
 async def fetch_from_waifu_pics(session, positive):
     try:
         category = map_tag_for_provider("waifu_pics", positive)
@@ -512,7 +507,6 @@ async def fetch_from_rule34(session, positive):
     except Exception:
         return None, None, None
 
-# PROVIDER_FETCHERS built after all fetchers are defined
 PROVIDER_FETCHERS = {
     "waifu_pics": fetch_from_waifu_pics,
     "waifu_im": fetch_from_waifu_im,
@@ -561,7 +555,6 @@ def build_provider_pool():
             if DEBUG_FETCH: logger.debug(f"Provider cycle (rebuild): {_provider_cycle_deque}")
     return list(_provider_cycle_deque)
 
-# ---------- Fetching / sending ----------
 async def attempt_get_media_bytes(session, gif_url):
     if not gif_url:
         return None, None, "no-url"
@@ -600,7 +593,6 @@ async def attempt_get_media_bytes(session, gif_url):
             return b, ctype2 or ctype, "downloaded-unknown-size"
         return None, ctype2 or ctype, "unknown-size-get-failed-or-too-large"
 
-# fetch_gif does NOT mark sent items; marking occurs after successful send
 async def fetch_gif(user_id):
     providers = build_provider_pool()
     if not providers:
@@ -784,7 +776,6 @@ async def send_embed_with_media(text_channel, member, embed, gif_bytes, gif_name
                     if sent_success:
                         await record_sent_for_user(member.id, gif_url)
                     return
-            # fallback: send link-only
             if gif_url:
                 if gif_url not in (embed.description or ""):
                     embed.description = (embed.description or "") + f"\n\n[View media here]({gif_url})"
@@ -810,7 +801,6 @@ async def send_embed_with_media(text_channel, member, embed, gif_bytes, gif_name
     if sent_success and gif_url:
         await record_sent_for_user(member.id, gif_url)
 
-# ---------- Greetings ----------
 JOIN_GREETINGS = [
     "🔥 {display_name} enters — confidence detected.",
     "✨ {display_name} arrived, and attention followed.",
@@ -937,7 +927,6 @@ LEAVE_GREETINGS = [
 while len(LEAVE_GREETINGS) < 60:
     LEAVE_GREETINGS.append(random.choice(LEAVE_GREETINGS))
 
-# ---------- Bot setup ----------
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
@@ -946,30 +935,19 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
-# ---------- Ensure 24/7 voice presence ----------
 @tasks.loop(seconds=30)
 async def ensure_connected_task():
-    """
-    Keeps the bot connected to the first VC in VC_IDS 24/7.
-    If disconnected, attempts to reconnect. If connected to a different channel,
-    moves to the desired one. Runs every 30s.
-    """
     try:
         if not VC_IDS:
             return
         target_vc_id = VC_IDS[0]
         for guild in bot.guilds:
-            # try to find the target channel in this guild
             target_channel = guild.get_channel(target_vc_id)
             if not target_channel:
-                # sometimes channel ID is not in this guild; skip
                 continue
-            # find existing voice client for this guild
             vc = discord.utils.get(bot.voice_clients, guild=guild)
             if vc:
-                # already connected in this guild
                 if vc.channel and vc.channel.id == target_vc_id:
-                    # good, ensure it's not closed
                     continue
                 else:
                     try:
@@ -986,7 +964,6 @@ async def ensure_connected_task():
                         except Exception:
                             if DEBUG_FETCH: logger.debug(f"failed to reconnect after move failure: {e}")
             else:
-                # no vc in this guild, attempt to connect
                 try:
                     await target_channel.connect(reconnect=True)
                     if DEBUG_FETCH: logger.debug(f"connected to VC {target_vc_id} in guild {guild.id}")
@@ -1002,7 +979,6 @@ async def on_ready():
     except RuntimeError:
         pass
     try:
-        # start ensure-connected so bot stays 24/7 in configured VC(s)
         if not ensure_connected_task.is_running():
             ensure_connected_task.start()
     except RuntimeError:
@@ -1022,15 +998,10 @@ async def on_ready():
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    """
-    We keep the welcome/goodbye behavior but DO NOT disconnect the bot when the channel becomes empty.
-    The ensure_connected_task keeps the bot connected 24/7.
-    """
     if member.bot:
         return
     text_channel = bot.get_channel(VC_CHANNEL_ID)
 
-    # user joined monitored VC
     if after.channel and (after.channel.id in VC_IDS) and (before.channel != after.channel):
         try:
             vc = discord.utils.get(bot.voice_clients, guild=member.guild)
@@ -1056,14 +1027,12 @@ async def on_voice_state_update(member, before, after):
         gif_bytes, gif_name, gif_url, ctype = await fetch_gif(member.id)
         await send_embed_with_media(text_channel, member, embed, gif_bytes, gif_name, gif_url, ctype)
 
-    # user left monitored VC
     if before.channel and (before.channel.id in VC_IDS) and (after.channel != before.channel):
         raw = random.choice(LEAVE_GREETINGS)
         msg = raw.format(display_name=member.display_name)
         embed = make_embed("Goodbye!", msg, member, "nsfw")
         gif_bytes, gif_name, gif_url, ctype = await fetch_gif(member.id)
         await send_embed_with_media(text_channel, member, embed, gif_bytes, gif_name, gif_url, ctype)
-        # NOTE: do NOT disconnect the bot here. ensure_connected_task keeps it alive 24/7.
 
 @bot.command(name="nsfw", aliases=["nude","hentai"])
 @commands.cooldown(1, 3, commands.BucketType.user)
