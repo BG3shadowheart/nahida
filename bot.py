@@ -33,12 +33,17 @@ REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "14"))
 DISCORD_MAX_UPLOAD = int(os.getenv("DISCORD_MAX_UPLOAD", str(8 * 1024 * 1024)))
 HEAD_SIZE_LIMIT = DISCORD_MAX_UPLOAD
 DATA_FILE = os.getenv("DATA_FILE", "data_nsfw.json")
-AUTOSAVE_INTERVAL = 30
-FETCH_ATTEMPTS = 40
-MAX_USED_GIFS_PER_USER = 1000
+AUTOSAVE_INTERVAL = int(os.getenv("AUTOSAVE_INTERVAL", str(30)))
+FETCH_ATTEMPTS = int(os.getenv("FETCH_ATTEMPTS", "40"))
+MAX_USED_GIFS_PER_USER = int(os.getenv("MAX_USED_GIFS_PER_USER", "1000"))
+
+VC_IDS = [
+    int(os.getenv("VC_ID_1", "1409170559337762980")),
+]
+VC_CHANNEL_ID = int(os.getenv("VC_CHANNEL_ID", "1371916812903780573"))
 
 logging.basicConfig(level=logging.DEBUG if DEBUG_FETCH else logging.INFO)
-logger = logging.getLogger("nsfw-bot")
+logger = logging.getLogger("spiciest-nsfw")
 
 # ---------- Helpers & Filters ----------
 _token_split_re = re.compile(r"[^a-z0-9]+")
@@ -50,7 +55,7 @@ ILLEGAL_TAGS = [
 ]
 FILENAME_BLOCK_KEYWORDS = ["orgy", "creampie", "facial", "scat", "fisting", "bestiality"]
 
-# For NSFW bot we still exclude explicitly illegal tags and explicit minors/bestiality/etc.
+# NSFW bot excludes illegal categories but otherwise allows adult content
 EXCLUDE_TAGS = [
     "loli", "shota", "child", "minor", "underage", "young", "schoolgirl", "age_gap",
     "pedo", "pedophile", "bestiality", "zoophilia", "rape", "sexual violence"
@@ -138,15 +143,14 @@ data.setdefault("gif_tags", [])
 
 _seed_gif_tags = [
     "hentai", "ecchi", "porn", "sex", "oral", "anal", "cum", "cumshot", "orgasm", "sex_scene",
-    "breasts", "big_breasts", "oppai", "huge_breasts", "milf", "mature", "thick", "thighs",
-    "ass", "booty", "lingerie", "panties", "pantyhose", "stockings", "garter",
+    "breasts", "big_breasts", "oppai", "huge_breasts", "milf", "mature",
+    "thick", "thighs", "ass", "booty", "lingerie", "panties", "stockings", "garter",
     "bikini", "swimsuit", "cleavage", "underboob", "sideboob",
-    "blowjob", "paizuri", "oral_focus", "kiss", "cuddle", "teasing", "seductive",
-    "fanservice", "bdsm", "bondage", "spanking", "wet",
-    "waifu", "neko", "maid", "cosplay", "cheerleader", "idol",
+    "blowjob", "paizuri", "oral_focus", "teasing", "seductive", "fanservice",
+    "bdsm", "bondage", "spanking", "wet", "waifu", "neko", "maid", "cosplay",
     "threesome", "group", "bukkake", "nipples", "strapon", "double_penetration",
     "masturbation", "footjob", "handjob", "fingering", "cum_on_face", "facesitting",
-    "pegging", "public", "group_sex", "yuri", "lesbian", "oral_anal", "double_oral"
+    "pegging", "public", "group_sex", "yuri", "lesbian"
 ]
 
 persisted = _dedupe_preserve_order(data.get("gif_tags", []))
@@ -173,7 +177,7 @@ async def autosave_task():
 
 # ---------- Provider terms & mapping (NSFW) ----------
 PROVIDER_TERMS = {
-    "waifu_pics": ["waifu", "neko", "blowjob"],  # trap excluded
+    "waifu_pics": ["waifu", "neko", "blowjob"],
     "waifu_im": ["hentai", "ero", "ecchi", "milf", "oral", "oppai", "cum", "anal"],
     "waifu_it": ["waifu", "hentai", "ero", "milf"],
     "nekos_best": ["neko", "waifu", "kiss", "hug"],
@@ -563,9 +567,10 @@ PROVIDER_FETCHERS = {
     "nekos_best": fetch_from_nekos_best,
     "nekos_life": fetch_from_nekos_life,
     "nekos_moe": fetch_from_nekos_moe,
-    "nekos_api": fetch_from_nekos_api,
+    "nekoapi": fetch_from_nekos_moe,
     "otakugifs": fetch_from_otakugifs,
     "animegirls_online": fetch_from_animegirls_online,
+    "nekos_api": fetch_from_nekos_api,
     "danbooru": fetch_from_danbooru,
     "gelbooru": fetch_from_gelbooru,
     "konachan": fetch_from_konachan,
@@ -647,7 +652,8 @@ async def attempt_get_media_bytes(session, gif_url):
 
 async def fetch_gif(user_id):
     user_key = str(user_id)
-    sent_hashes = set(data.get("sent_history", {}).get(user_key, []))
+    sent_list = data.get("sent_history", {}).setdefault(user_key, [])
+    sent_set = set(sent_list)
     providers = build_provider_pool()
     if not providers:
         if DEBUG_FETCH:
@@ -690,7 +696,7 @@ async def fetch_gif(user_id):
             if _tag_is_disallowed(str(meta or "")):
                 continue
             gif_hash = hashlib.sha1((gif_url or "").encode()).hexdigest()
-            if gif_hash in sent_hashes:
+            if gif_hash in sent_set:
                 if DEBUG_FETCH:
                     logger.debug("already sent to user; skipping")
                 continue
@@ -698,8 +704,7 @@ async def fetch_gif(user_id):
             if DEBUG_FETCH:
                 logger.debug(f"attempt_get_media_bytes -> provider={provider} url={gif_url} reason={reason} bytes_ok={bool(b)} ctype={ctype}")
             # mark as used (persist)
-            sent_hashes.add(gif_hash)
-            sent_list = data.get("sent_history", {}).get(user_key, [])
+            sent_set.add(gif_hash)
             sent_list.append(gif_hash)
             if len(sent_list) > MAX_USED_GIFS_PER_USER:
                 del sent_list[:len(sent_list) - MAX_USED_GIFS_PER_USER]
@@ -731,12 +736,11 @@ def try_compress_bytes(b, ctype, max_size):
         img = Image.open(buf)
         fmt = img.format or "GIF"
         if fmt.upper() in ("GIF", "WEBP"):
-            frames = [f.copy().convert("RGBA") for f in ImageSequence.Iterator(img)]
+            frames = [frame.copy().convert("RGBA") for frame in ImageSequence.Iterator(img)]
             w, h = frames[0].size
-            for step in range(1, 13):
-                scale = 0.95 ** step
-                new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+            for pct in [0.95 ** i for i in range(1, 13)]:
                 out = io.BytesIO()
+                new_size = (max(1, int(w * pct)), max(1, int(h * pct)))
                 resized = [fr.resize(new_size, Image.LANCZOS) for fr in frames]
                 try:
                     resized[0].save(out, format="GIF", save_all=True, append_images=resized[1:], optimize=True, loop=0)
@@ -750,10 +754,9 @@ def try_compress_bytes(b, ctype, max_size):
             return None
         else:
             w, h = img.size
-            for step in range(1, 13):
-                scale = 0.95 ** step
-                new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+            for pct in [0.95 ** i for i in range(1, 13)]:
                 out = io.BytesIO()
+                new_size = (max(1, int(w * pct)), max(1, int(h * pct)))
                 img2 = img.resize(new_size, Image.LANCZOS)
                 if fmt.upper() in ("JPEG", "JPG"):
                     img2.save(out, format="JPEG", quality=85, optimize=True)
@@ -767,14 +770,17 @@ def try_compress_bytes(b, ctype, max_size):
             logger.debug(f"compression failed: {e}")
         return None
 
-def make_embed(title, desc, member, kind="nsfw"):
+def make_embed(title, desc, member, kind="nsfw", count=None):
     color = discord.Color.dark_red() if kind == "nsfw" else discord.Color.dark_gray()
     embed = discord.Embed(title=title, description=desc, color=color, timestamp=datetime.utcnow())
     try:
         embed.set_thumbnail(url=member.display_avatar.url)
     except Exception:
         pass
-    embed.set_footer(text=f"{member.display_name} • {member.id}")
+    footer = f"{member.display_name} • {member.id}"
+    if count:
+        footer += f" • Joins: {count}"
+    embed.set_footer(text=footer)
     return embed
 
 async def record_sent_for_user(member_id, gif_url):
@@ -798,7 +804,7 @@ async def record_sent_for_user(member_id, gif_url):
     except Exception:
         pass
 
-async def send_embed_with_media(channel, member, embed, gif_bytes, gif_name, gif_url, ctype=None):
+async def send_embed_with_media(text_channel, member, embed, gif_bytes, gif_name, gif_url, ctype=None):
     max_upload = DISCORD_MAX_UPLOAD
     sent_success = False
     try:
@@ -806,21 +812,21 @@ async def send_embed_with_media(channel, member, embed, gif_bytes, gif_name, gif
             try:
                 file_server = discord.File(io.BytesIO(gif_bytes), filename=gif_name)
                 embed.set_image(url=f"attachment://{gif_name}")
-                if channel:
-                    await channel.send(embed=embed, file=file_server)
+                if text_channel:
+                    await text_channel.send(embed=embed, file=file_server)
                 sent_success = True
             except Exception:
-                if channel:
+                if text_channel:
                     if gif_url and gif_url not in (embed.description or ""):
                         embed.description = (embed.description or "") + f"\n\n[View media here]({gif_url})"
-                    await channel.send(embed=embed)
+                    await text_channel.send(embed=embed)
                     sent_success = True
             try:
                 dm_file = discord.File(io.BytesIO(gif_bytes), filename=gif_name)
                 await member.send(embed=embed, file=dm_file)
             except Exception:
                 try:
-                    dm_embed = make_embed(embed.title or "Media", embed.description or "", member)
+                    dm_embed = make_embed(embed.title or "Media", embed.description or "", member, kind="nsfw")
                     if gif_url and gif_url not in (dm_embed.description or ""):
                         dm_embed.description = (dm_embed.description or "") + f"\n\n[View media here]({gif_url})"
                     await member.send(dm_embed)
@@ -833,21 +839,21 @@ async def send_embed_with_media(channel, member, embed, gif_bytes, gif_name, gif
                     try:
                         file_server = discord.File(io.BytesIO(compressed), filename=gif_name)
                         embed.set_image(url=f"attachment://{gif_name}")
-                        if channel:
-                            await channel.send(embed=embed, file=file_server)
+                        if text_channel:
+                            await text_channel.send(embed=embed, file=file_server)
                         sent_success = True
                     except Exception:
-                        if channel:
+                        if text_channel:
                             if gif_url and gif_url not in (embed.description or ""):
                                 embed.description = (embed.description or "") + f"\n\n[View media here]({gif_url})"
-                            await channel.send(embed=embed)
+                            await text_channel.send(embed=embed)
                             sent_success = True
                     try:
                         dm_file = discord.File(io.BytesIO(compressed), filename=gif_name)
                         await member.send(embed=embed, file=dm_file)
                     except Exception:
                         try:
-                            dm_embed = make_embed(embed.title or "Media", embed.description or "", member)
+                            dm_embed = make_embed(embed.title or "Media", embed.description or "", member, kind="nsfw")
                             if gif_url and gif_url not in (dm_embed.description or ""):
                                 dm_embed.description = (dm_embed.description or "") + f"\n\n[View media here]({gif_url})"
                             await member.send(dm_embed)
@@ -859,20 +865,21 @@ async def send_embed_with_media(channel, member, embed, gif_bytes, gif_name, gif
             if gif_url:
                 if gif_url not in (embed.description or ""):
                     embed.description = (embed.description or "") + f"\n\n[View media here]({gif_url})"
-            if channel:
-                await channel.send(embed=embed)
+            if text_channel:
+                await text_channel.send(embed=embed)
                 sent_success = True
             try:
-                dm_embed = make_embed(embed.title or "Media", embed.description or "", member)
+                dm_embed = make_embed(embed.title or "Media", embed.description or "", member, kind="nsfw")
                 if gif_url and gif_url not in (dm_embed.description or ""):
                     dm_embed.description = (dm_embed.description or "") + f"\n\n[View media here]({gif_url})"
                 await member.send(dm_embed)
             except Exception:
                 pass
-    except Exception:
+    except Exception as e:
+        logger.warning(f"unexpected error in send_embed_with_media: {e}")
         try:
-            if channel:
-                await channel.send(embed=embed)
+            if text_channel:
+                await text_channel.send(embed=embed)
                 sent_success = True
             await member.send(embed=embed)
         except Exception:
@@ -880,24 +887,245 @@ async def send_embed_with_media(channel, member, embed, gif_bytes, gif_name, gif
     if sent_success and gif_url:
         await record_sent_for_user(member.id, gif_url)
 
+# ---------- Greetings ----------
+JOIN_GREETINGS = [
+    "🔥 {display_name} enters — confidence detected.",
+    "✨ {display_name} arrived, and attention followed.",
+    "😈 {display_name} joined — bold move.",
+    "👀 {display_name} just stepped in. Not unnoticed.",
+    "🖤 {display_name} is here. Behave.",
+    "💋 {display_name} joined — interesting choice.",
+    "🕶️ {display_name} walks in like they own it.",
+    "🌒 {display_name} entered quietly. Dangerous.",
+    "⚡ {display_name} arrived with presence.",
+    "🥀 {display_name} joined — don’t disappoint.",
+    "🧠 {display_name} stepped in. I’m watching.",
+    "🗝️ {display_name} unlocked the room.",
+    "🔥 {display_name} joined — heat follows.",
+    "👑 {display_name} arrived. Act accordingly.",
+    "🌑 {display_name} stepped into my space.",
+    "💎 {display_name} joined — rare energy.",
+    "🩸 {display_name} arrived. Brave.",
+    "🖤 {display_name} is here. Stay sharp.",
+    "🕯️ {display_name} joined — slow and confident.",
+    "🐍 {display_name} slid in smoothly.",
+    "🌙 {display_name} arrived under quiet watch.",
+    "🧿 {display_name} joined. I see you.",
+    "🔮 {display_name} appeared — expected.",
+    "🪶 {display_name} stepped in lightly.",
+    "🎭 {display_name} arrived. Masks on.",
+    "🩶 {display_name} joined — calm energy.",
+    "🔥 {display_name} entered. Control yourself.",
+    "🗝️ {display_name} found the door.",
+    "👁️ {display_name} joined — focus locked.",
+    "🌫️ {display_name} drifted in smoothly.",
+    "🧊 {display_name} arrived cool and composed.",
+    "🖤 {display_name} joined — noticed immediately.",
+    "⚖️ {display_name} entered. Balance shifts.",
+    "🐺 {display_name} joined alone. Respect.",
+    "🌘 {display_name} arrived quietly.",
+    "💼 {display_name} stepped in professionally.",
+    "🕸️ {display_name} entered the web.",
+    "🔥 {display_name} joined — tension rises.",
+    "🪞 {display_name} arrived. Look sharp.",
+    "🧠 {display_name} joined — think carefully.",
+    "🖤 {display_name} entered. Eyes on you.",
+    "🩸 {display_name} joined — bold timing.",
+    "🌑 {display_name} stepped inside.",
+    "💋 {display_name} arrived — tempting.",
+    "🕶️ {display_name} joined with style.",
+    "🔥 {display_name} entered — don’t blink.",
+    "👑 {display_name} joined. Hold yourself well.",
+    "🌙 {display_name} arrived under watchful eyes.",
+    "🖤 {display_name} stepped in confidently.",
+    "⚡ {display_name} joined — energy felt.",
+    "🗝️ {display_name} crossed the threshold.",
+    "😈 {display_name} arrived — curious choice.",
+    "🧿 {display_name} joined. Observed.",
+    "🔥 {display_name} entered — composure tested.",
+    "🩶 {display_name} joined quietly.",
+    "👀 {display_name} arrived. I noticed.",
+    "🌒 {display_name} stepped in — interesting.",
+    "🖤 {display_name} joined. Stay aware."
+]
+while len(JOIN_GREETINGS) < 60:
+    JOIN_GREETINGS.append(random.choice(JOIN_GREETINGS))
+
+LEAVE_GREETINGS = [
+    "🌙 {display_name} slips away — silence lingers.",
+    "🖤 {display_name} left. I noticed.",
+    "🌑 {display_name} disappeared quietly.",
+    "👀 {display_name} is gone. Remembered.",
+    "🕯️ {display_name} exited — calm choice.",
+    "😈 {display_name} left already?",
+    "🌫️ {display_name} drifted out.",
+    "🧠 {display_name} stepped away. Thinking?",
+    "🖤 {display_name} vanished smoothly.",
+    "🌒 {display_name} left under watch.",
+    "🗝️ {display_name} closed the door.",
+    "🩶 {display_name} exited calmly.",
+    "🕶️ {display_name} slipped out unnoticed.",
+    "🌙 {display_name} faded into the night.",
+    "🔥 {display_name} left — heat cools.",
+    "🧿 {display_name} exited. Observed.",
+    "🖤 {display_name} stepped away.",
+    "🕸️ {display_name} escaped the web.",
+    "👑 {display_name} left with composure.",
+    "🌑 {display_name} disappeared.",
+    "💎 {display_name} exited — rare move.",
+    "🩸 {display_name} left boldly.",
+    "🧠 {display_name} walked away quietly.",
+    "🌫️ {display_name} slipped into silence.",
+    "🖤 {display_name} is gone for now.",
+    "🌘 {display_name} left without a sound.",
+    "⚖️ {display_name} exited — balance restored.",
+    "🕯️ {display_name} stepped out.",
+    "👁️ {display_name} left. Not forgotten.",
+    "🌙 {display_name} vanished softly.",
+    "🖤 {display_name} exited confidently.",
+    "🔥 {display_name} left — tension fades.",
+    "🧊 {display_name} stepped away coolly.",
+    "🕶️ {display_name} left with style.",
+    "🧿 {display_name} exited. Noted.",
+    "🌑 {display_name} slipped out quietly.",
+    "🩶 {display_name} walked away calmly.",
+    "🕸️ {display_name} escaped.",
+    "👀 {display_name} left — watched.",
+    "🖤 {display_name} disappeared smoothly.",
+    "🌒 {display_name} stepped away.",
+    "🔥 {display_name} exited — control remains.",
+    "🧠 {display_name} left thoughtfully.",
+    "🕯️ {display_name} faded out.",
+    "🌙 {display_name} slipped into the dark.",
+    "🖤 {display_name} left. Silence follows.",
+    "🧿 {display_name} exited cleanly.",
+    "🩸 {display_name} walked away.",
+    "🌑 {display_name} vanished again.",
+    "🕶️ {display_name} exited quietly.",
+    "👑 {display_name} left with grace.",
+    "🖤 {display_name} stepped out calmly.",
+    "🌫️ {display_name} dissolved into quiet.",
+    "🔥 {display_name} left — eyes linger.",
+    "🧠 {display_name} stepped away.",
+    "🌙 {display_name} exited softly.",
+    "🖤 {display_name} gone — remembered.",
+    "👀 {display_name} left. Not ignored."
+]
+while len(LEAVE_GREETINGS) < 60:
+    LEAVE_GREETINGS.append(random.choice(LEAVE_GREETINGS))
+
 # ---------- Bot setup ----------
 intents = discord.Intents.default()
+intents.guilds = True
 intents.members = True
+intents.voice_states = True
+intents.message_content = True
+
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
+
+@tasks.loop(seconds=60)
+async def ensure_connected_task():
+    try:
+        if not VC_IDS:
+            return
+        vc_id = VC_IDS[0]
+        channel = bot.get_channel(vc_id)
+        if not channel:
+            for g in bot.guilds:
+                ch = g.get_channel(vc_id)
+                if ch:
+                    channel = ch
+                    break
+        if not channel:
+            return
+        vc = discord.utils.get(bot.voice_clients, guild=channel.guild)
+        if not vc:
+            try:
+                await channel.connect(reconnect=True)
+                if DEBUG_FETCH:
+                    logger.debug(f"connected to VC {vc_id}")
+            except Exception as e:
+                if DEBUG_FETCH:
+                    logger.debug(f"failed connect: {e}")
+        else:
+            if vc.channel.id != channel.id:
+                try:
+                    await vc.move_to(channel)
+                except Exception as e:
+                    if DEBUG_FETCH:
+                        logger.debug(f"move failed: {e}")
+    except Exception as e:
+        if DEBUG_FETCH:
+            logger.debug(f"ensure_connected unexpected: {e}")
 
 @bot.event
 async def on_ready():
     try:
         autosave_task.start()
-    except Exception:
+    except RuntimeError:
         pass
-    logger.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    try:
+        ensure_connected_task.start()
+    except RuntimeError:
+        pass
+    available = []
+    for p in PROVIDER_FETCHERS.keys():
+        key_ok = True
+        if p == "waifu_it" and not WAIFUIT_API_KEY:
+            key_ok = False
+        if p == "danbooru" and (not DANBOORU_API_KEY or not DANBOORU_USER):
+            key_ok = False
+        available.append((p, key_ok, data.get("provider_weights", {}).get(p, 1)))
+    logger.info("Provider availability (provider, api_key_hint, stored_weight):")
+    for t in available:
+        logger.info(t)
+    logger.info(f"Logged in as {bot.user} (id={bot.user.id})")
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    if member.bot:
+        return
+    text_channel = bot.get_channel(VC_CHANNEL_ID)
+
+    # user joined monitored VC
+    if after.channel and (after.channel.id in VC_IDS) and (before.channel != after.channel):
+        try:
+            vc = discord.utils.get(bot.voice_clients, guild=member.guild)
+            if vc:
+                if vc.channel.id != after.channel.id:
+                    await vc.move_to(after.channel)
+            else:
+                await after.channel.connect()
+        except Exception as e:
+            logger.warning(f"VC join/connect error: {e}")
+
+        raw = random.choice(JOIN_GREETINGS)
+        msg = raw.format(display_name=member.display_name)
+        data["join_counts"] = data.get("join_counts", {})
+        data["join_counts"][str(member.id)] = data["join_counts"].get(str(member.id), 0) + 1
+        embed = make_embed("Welcome!", msg, member, "nsfw", data["join_counts"][str(member.id)])
+        gif_bytes, gif_name, gif_url, ctype = await fetch_gif(member.id)
+        await send_embed_with_media(text_channel, member, embed, gif_bytes, gif_name, gif_url, ctype)
+
+    # user left monitored VC
+    if before.channel and (before.channel.id in VC_IDS) and (after.channel != before.channel):
+        raw = random.choice(LEAVE_GREETINGS)
+        msg = raw.format(display_name=member.display_name)
+        embed = make_embed("Goodbye!", msg, member, "nsfw")
+        gif_bytes, gif_name, gif_url, ctype = await fetch_gif(member.id)
+        await send_embed_with_media(text_channel, member, embed, gif_bytes, gif_name, gif_url, ctype)
+        try:
+            vc = discord.utils.get(bot.voice_clients, guild=member.guild)
+            if vc and vc.channel and vc.channel.id == before.channel.id:
+                non_bot_members = [m for m in vc.channel.members if not m.bot]
+                if len(non_bot_members) == 0:
+                    await vc.disconnect()
+        except Exception as e:
+            logger.debug(f"Error checking/disconnecting VC: {e}")
 
 @bot.command(name="nsfw", aliases=["nude","hentai"])
 @commands.cooldown(1, 3, commands.BucketType.user)
 async def nsfw(ctx):
-    """Send an NSFW image/gif. Only in NSFW channels or DMs."""
-    # enforce channel NSFW unless DM
     if ctx.guild and not getattr(ctx.channel, "is_nsfw", lambda: False)():
         await ctx.send("This command can only be used in NSFW channels or in DMs.")
         return
@@ -916,10 +1144,10 @@ async def nsfw(ctx):
 
 @bot.command(name="ntags")
 async def ntags(ctx):
-    await ctx.send("Available NSFW seed tags: " + ", ".join(GIF_TAGS[:60]))
+    await ctx.send("Available NSFW seed tags: " + ", ".join(GIF_TAGS[:80]))
 
 if __name__ == "__main__":
     if not TOKEN:
-        logger.error("TOKEN not set; exiting.")
+        logger.error("TOKEN missing. Set TOKEN and restart.")
     else:
         bot.run(TOKEN)
