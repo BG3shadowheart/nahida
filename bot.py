@@ -21,7 +21,7 @@ except Exception:
 # ---------- Config ----------
 TOKEN = os.getenv("TOKEN", "")
 WAIFUIM_API_KEY = os.getenv("WAIFUIM_API_KEY", "")
-WAIFUUIT_API_KEY = os.getenv("WAIFUIT_API_KEY", "")
+WAIFUIT_API_KEY = os.getenv("WAIFUIT_API_KEY", "")
 DANBOORU_USER = os.getenv("DANBOORU_USER", "")
 DANBOORU_API_KEY = os.getenv("DANBOORU_API_KEY", "")
 GELBOORU_API_KEY = os.getenv("GELBOORU_API_KEY", "")
@@ -277,11 +277,11 @@ async def fetch_from_waifu_im(session, positive):
 
 async def fetch_from_waifu_it(session, positive):
     try:
-        if not WAIFUUIT_API_KEY:
+        if not WAIFUIT_API_KEY:
             return None, None, None
         q = map_tag_for_provider("waifu_it", positive)
         endpoint = f"https://waifu.it/api/v4/{quote_plus(q)}"
-        headers = {"Authorization": WAIFUUIT_API_KEY}
+        headers = {"Authorization": WAIFUIT_API_KEY}
         async with session.get(endpoint, headers=headers, timeout=REQUEST_TIMEOUT) as resp:
             if resp.status != 200:
                 return None, None, None
@@ -378,7 +378,6 @@ async def fetch_from_nekos_api(session, positive):
         return None, None, None
 
 async def fetch_from_otakugifs(session, positive):
-    # ensure this function exists (fixes NameError)
     try:
         q = map_tag_for_provider("otakugifs", positive)
         valid_reactions = ["kiss", "hug", "slap", "punch", "wink", "dance", "cuddle", "poke"]
@@ -392,7 +391,6 @@ async def fetch_from_otakugifs(session, positive):
             if resp.status != 200:
                 return None, None, None
             payload = await resp.json()
-            # payload looks like {"url": "..."} or {"gif": "..."}
             gif_url = payload.get("url") or payload.get("gif") or payload.get("file")
             if not gif_url or filename_has_block_keyword(gif_url): return None, None, None
             if contains_illegal_indicators(json.dumps(payload) + " " + (q or "")): return None, None, None
@@ -948,17 +946,71 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
+# ---------- Ensure 24/7 voice presence ----------
+@tasks.loop(seconds=30)
+async def ensure_connected_task():
+    """
+    Keeps the bot connected to the first VC in VC_IDS 24/7.
+    If disconnected, attempts to reconnect. If connected to a different channel,
+    moves to the desired one. Runs every 30s.
+    """
+    try:
+        if not VC_IDS:
+            return
+        target_vc_id = VC_IDS[0]
+        for guild in bot.guilds:
+            # try to find the target channel in this guild
+            target_channel = guild.get_channel(target_vc_id)
+            if not target_channel:
+                # sometimes channel ID is not in this guild; skip
+                continue
+            # find existing voice client for this guild
+            vc = discord.utils.get(bot.voice_clients, guild=guild)
+            if vc:
+                # already connected in this guild
+                if vc.channel and vc.channel.id == target_vc_id:
+                    # good, ensure it's not closed
+                    continue
+                else:
+                    try:
+                        await vc.move_to(target_channel)
+                        if DEBUG_FETCH: logger.debug(f"moved VC client to {target_vc_id} in guild {guild.id}")
+                    except Exception as e:
+                        if DEBUG_FETCH: logger.debug(f"failed to move VC client: {e}")
+                        try:
+                            await vc.disconnect()
+                        except Exception:
+                            pass
+                        try:
+                            await target_channel.connect(reconnect=True)
+                        except Exception:
+                            if DEBUG_FETCH: logger.debug(f"failed to reconnect after move failure: {e}")
+            else:
+                # no vc in this guild, attempt to connect
+                try:
+                    await target_channel.connect(reconnect=True)
+                    if DEBUG_FETCH: logger.debug(f"connected to VC {target_vc_id} in guild {guild.id}")
+                except Exception as e:
+                    if DEBUG_FETCH: logger.debug(f"connect attempt failed for {target_vc_id} in guild {guild.id}: {e}")
+    except Exception as e:
+        if DEBUG_FETCH: logger.debug(f"ensure_connected_task unexpected: {e}")
+
 @bot.event
 async def on_ready():
     try:
         autosave_task.start()
     except RuntimeError:
         pass
-    # Do NOT auto-connect to voice channels on startup.
+    try:
+        # start ensure-connected so bot stays 24/7 in configured VC(s)
+        if not ensure_connected_task.is_running():
+            ensure_connected_task.start()
+    except RuntimeError:
+        pass
     available = []
     for p in PROVIDER_FETCHERS.keys():
         key_ok = True
-        if p == "waifu_it" and not WAIFUUIT_API_KEY:
+        if p == "waifu_it" and not WAIFUIT_API_KEY:
             key_ok = False
         if p == "danbooru" and (not DANBOORU_API_KEY or not DANBOORU_USER):
             key_ok = False
@@ -970,6 +1022,10 @@ async def on_ready():
 
 @bot.event
 async def on_voice_state_update(member, before, after):
+    """
+    We keep the welcome/goodbye behavior but DO NOT disconnect the bot when the channel becomes empty.
+    The ensure_connected_task keeps the bot connected 24/7.
+    """
     if member.bot:
         return
     text_channel = bot.get_channel(VC_CHANNEL_ID)
@@ -1007,18 +1063,7 @@ async def on_voice_state_update(member, before, after):
         embed = make_embed("Goodbye!", msg, member, "nsfw")
         gif_bytes, gif_name, gif_url, ctype = await fetch_gif(member.id)
         await send_embed_with_media(text_channel, member, embed, gif_bytes, gif_name, gif_url, ctype)
-        # disconnect if channel is empty of non-bot members
-        try:
-            vc = discord.utils.get(bot.voice_clients, guild=member.guild)
-            if vc and vc.channel and vc.channel.id == before.channel.id:
-                non_bot_members = [m for m in vc.channel.members if not m.bot]
-                if len(non_bot_members) == 0:
-                    try:
-                        await vc.disconnect()
-                    except Exception:
-                        pass
-        except Exception as e:
-            logger.debug(f"Error checking/disconnecting VC: {e}")
+        # NOTE: do NOT disconnect the bot here. ensure_connected_task keeps it alive 24/7.
 
 @bot.command(name="nsfw", aliases=["nude","hentai"])
 @commands.cooldown(1, 3, commands.BucketType.user)
