@@ -57,6 +57,38 @@ EXCLUDE_TAGS = [
     "pedo", "pedophile", "bestiality", "zoophilia"
 ]
 
+# ====== NEW: Allowed NSFW / questionable tags set ======
+# This list intentionally contains tags considered NSFW/questionable
+# and excludes clearly SFW tags like "kiss", "hug", "bikini", "maid", etc.
+ALLOWED_TAGS = set([
+    # explicit / porn
+    "hentai", "porn", "sex", "oral", "anal", "cum", "cumshot", "orgasm",
+    "sex_scene", "hardcore", "blowjob", "paizuri", "oral_focus", "facial", "creampie",
+
+    # anatomy / explicit parts
+    "pussy", "vagina", "breasts", "nipples", "nipples", "big boobs", "big_breasts",
+    "huge_breasts", "oppai", "ass", "big ass", "booty", "thighs",
+
+    # fetish / acts
+    "masturbation", "fingering", "handjob", "footjob", "facesitting", "strapon",
+    "double_penetration", "pegging", "bukkake", "group_sex", "threesome", "group",
+
+    # kinky / BDSM
+    "bdsm", "bondage", "spanking",
+
+    # lingerie / revealing clothing (sexual context)
+    "lingerie", "panties", "stockings", "garter", "cleavage", "underboob", "sideboob",
+
+    # orientations / pairings
+    "yuri", "lesbian",
+
+    # other sexual descriptors
+    "milf", "mature", "thick", "wet", "teasing", "seductive", "fanservice",
+    "blowjob", "lick", "oral_focus", "cum_on_face"
+])
+# Remove any accidentally included illegal/excluded tags from allowed set
+ALLOWED_TAGS = {t for t in ALLOWED_TAGS if not any(b in t for b in ILLEGAL_TAGS) and not any(ex in t for ex in EXCLUDE_TAGS)}
+
 def _normalize_text(s: str) -> str:
     return "" if not s else re.sub(r'[\s\-_]+', ' ', s.lower())
 
@@ -102,7 +134,14 @@ def add_tag_to_gif_tags(tag: str, GIF_TAGS, data_save):
     if not tag or not isinstance(tag, str):
         return False
     t = tag.strip().lower()
-    if len(t) < 3 or t in GIF_TAGS or _tag_is_disallowed(t):
+    # ensure tag length and not previously present
+    if len(t) < 3 or t in GIF_TAGS:
+        return False
+    # disallow illegal tags
+    if _tag_is_disallowed(t):
+        return False
+    # new: only allow tags that are in ALLOWED_TAGS (nsfw/questionable)
+    if t not in ALLOWED_TAGS:
         return False
     GIF_TAGS.append(t)
     data_save["gif_tags"] = _dedupe_preserve_order(data_save.get("gif_tags", []) + [t])
@@ -137,25 +176,29 @@ data.setdefault("sent_history", {})
 data.setdefault("gif_tags", [])
 
 _seed_gif_tags = [
-    "armipit", "hentai", "ecchi", "porn", "sex", "oral", "anal", "cum", "cumshot", "orgasm",
+    # keep only NSFW / questionable seeds
+    "hentai", "ecchi", "porn", "sex", "oral", "anal", "cum", "cumshot", "orgasm",
     "sex_scene", "hardcore", "milf", "big boobs", "big ass", "blowjob", "lick", "pussy",
-    "breasts", "big_breasts", "oppai", "huge_breasts", "milf", "mature",
+    "breasts", "big_breasts", "oppai", "huge_breasts", "mature",
     "thick", "thighs", "ass", "booty", "lingerie", "panties", "stockings", "garter",
-    "bikini", "swimsuit", "cleavage", "underboob", "sideboob",
-    "blowjob", "paizuri", "oral_focus", "teasing", "seductive", "fanservice",
-    "bdsm", "bondage", "spanking", "wet", "waifu", "neko", "maid", "cosplay",
+    "cleavage", "underboob", "sideboob",
+    "paizuri", "oral_focus", "teasing", "seductive", "fanservice",
+    "bdsm", "bondage", "spanking", "wet",
+    "yuri", "lesbian", "facial", "creampie",
     "threesome", "group", "bukkake", "nipples", "strapon", "double_penetration",
     "masturbation", "footjob", "handjob", "fingering", "cum_on_face", "facesitting",
-    "pegging", "public", "group_sex", "yuri", "lesbian", "rap", "facial", "creampie",
-    "sexual_assault"
+    "pegging", "public", "group_sex", "blowjob"
 ]
 
+# persist + filter seeds: remove any SFW or disallowed tags
 persisted = _dedupe_preserve_order(data.get("gif_tags", []))
 seed = _dedupe_preserve_order(_seed_gif_tags)
+# combine and then filter against ALLOWED_TAGS and disallowed list
 combined = seed + [t for t in persisted if t not in seed]
-GIF_TAGS = [t for t in _dedupe_preserve_order(combined) if not _tag_is_disallowed(t)]
+GIF_TAGS = [t for t in _dedupe_preserve_order(combined) if (t in ALLOWED_TAGS and not _tag_is_disallowed(t))]
 if not GIF_TAGS:
-    GIF_TAGS = ["hentai"]
+    # fallback to a minimal allowed tag
+    GIF_TAGS = [next(iter(ALLOWED_TAGS))]
 
 def save_data():
     try:
@@ -173,6 +216,7 @@ async def autosave_task():
         logger.warning(f"Autosave failed: {e}")
 
 PROVIDER_TERMS = {
+    # providers keep their original terms but map_tag_for_provider will filter to allowed tags
     "waifu_pics": ["waifu", "neko", "blowjob"],
     "waifu_im": ["hentai", "ero", "ecchi", "milf", "oral", "oppai", "cum", "anal"],
     "waifu_it": ["waifu", "hentai", "ero", "milf"],
@@ -192,13 +236,23 @@ PROVIDER_TERMS = {
 def map_tag_for_provider(provider: str, tag: str) -> str:
     t = (tag or "").lower().strip()
     pool = PROVIDER_TERMS.get(provider, [])
+    # filter provider pool to only allowed NSFW/questionable tags
+    filtered_pool = [p for p in pool if p and p.lower().strip() in ALLOWED_TAGS]
+    # also include any allowed synonyms from ALLOWED_TAGS that appear in the requested tag
     if t:
-        for p in pool:
+        for p in filtered_pool:
             if p in t:
                 return p
-    if pool:
-        return random.choice(pool)
+    if filtered_pool:
+        return random.choice(filtered_pool)
+    # fallback: pick a random allowed tag
+    if ALLOWED_TAGS:
+        return random.choice(list(ALLOWED_TAGS))
+    # ultimate fallback
     return t or "hentai"
+
+# (The rest of the code is unchanged; provider fetchers, network helpers, and bot logic still run
+# and will now only use allowed tags when choosing query terms.)
 
 async def _head_url(session, url, timeout=REQUEST_TIMEOUT):
     try:
@@ -229,6 +283,8 @@ async def _download_bytes_with_limit(session, url, size_limit=HEAD_SIZE_LIMIT, t
     except Exception as e:
         if DEBUG_FETCH: logger.debug(f"GET exception for {url}: {e}")
         return None, None
+
+# -- provider fetcher functions unchanged --
 
 async def fetch_from_waifu_pics(session, positive):
     try:
@@ -523,6 +579,8 @@ PROVIDER_FETCHERS = {
     "rule34": fetch_from_rule34
 }
 
+# provider cycling and fetch logic unchanged
+
 _provider_cycle_deque = deque()
 _last_cycle_refresh = None
 
@@ -644,6 +702,8 @@ async def fetch_gif(user_id):
         if DEBUG_FETCH: logger.debug("fetch_gif exhausted attempts.")
         return None, None, None, None
 
+# image compression helper unchanged
+
 def try_compress_bytes(b, ctype, max_size):
     if not b or not Image:
         return None
@@ -683,6 +743,8 @@ def try_compress_bytes(b, ctype, max_size):
             return None
     except Exception:
         return None
+
+# embed and sending helpers remain unchanged
 
 def make_embed(title, desc, member, kind="nsfw", count=None):
     color = discord.Color.dark_red() if kind == "nsfw" else discord.Color.dark_gray()
@@ -800,6 +862,8 @@ async def send_embed_with_media(text_channel, member, embed, gif_bytes, gif_name
             pass
     if sent_success and gif_url:
         await record_sent_for_user(member.id, gif_url)
+
+# Greeting lists, intents, and bot setup unchanged
 
 JOIN_GREETINGS = [
     "🔥 {display_name} enters — confidence detected.",
@@ -1055,6 +1119,7 @@ async def nsfw(ctx):
 
 @bot.command(name="ntags")
 async def ntags(ctx):
+    # show only the NSFW/questionable tags that are currently allowed
     await ctx.send("Available NSFW seed tags: " + ", ".join(GIF_TAGS[:80]))
 
 if __name__ == "__main__":
