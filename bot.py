@@ -761,9 +761,7 @@ async def on_voice_state_update(member, before, after):
             if channel:
                 try:
                     greeting = random.choice(JOIN_GREETINGS).format(display_name=member.display_name)
-                    embed = discord.Embed(description=f"**{greeting}**", color=discord.Color.dark_purple())
-                    embed.set_thumbnail(url=member.display_avatar.url)
-                    await channel.send(embed=embed)
+                    await channel.send(greeting)
                     logger.info(f"Sent greeting to {member.name}")
                     
                     async with aiohttp.ClientSession() as session:
@@ -782,8 +780,14 @@ async def on_voice_state_update(member, before, after):
                     leave_msg = random.choice(LEAVE_GREETINGS).format(display_name=member.display_name)
                     await channel.send(leave_msg)
                     logger.info(f"Sent leave message for {member.name}")
+                    
+                    async with aiohttp.ClientSession() as session:
+                        gif_url, source, meta = await fetch_random_gif(session, member.id)
+                        if gif_url:
+                            await send_image_as_file(channel, session, gif_url, send_to_dm=member)
+                            logger.info(f"Sent leave NSFW content from {source}")
                 except Exception as e:
-                    logger.error(f"Failed to send leave message: {e}")
+                    logger.error(f"Failed to send leave content: {e}")
 
 @tasks.loop(seconds=120)
 async def check_vc():
