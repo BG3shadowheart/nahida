@@ -678,13 +678,14 @@ async def compress_image(image_bytes, target_size=DISCORD_MAX_UPLOAD):
         logger.error(f"Compression failed: {e}")
         return image_bytes
 
-async def send_image_as_file(channel, session, image_url, send_to_dm=None):
+async def send_greeting_with_image(channel, session, greeting_text, image_url, send_to_dm=None):
     try:
         image_bytes, content_type = await _download_bytes_with_limit(session, image_url)
         if not image_bytes or len(image_bytes) > DISCORD_MAX_UPLOAD:
             if image_bytes and len(image_bytes) > DISCORD_MAX_UPLOAD:
                 image_bytes = await compress_image(image_bytes)
             if not image_bytes or len(image_bytes) > DISCORD_MAX_UPLOAD:
+                await channel.send(greeting_text)
                 return
         
         ext = ".jpg"
@@ -697,19 +698,20 @@ async def send_image_as_file(channel, session, image_url, send_to_dm=None):
         
         filename = f"nsfw{ext}"
         file = discord.File(io.BytesIO(image_bytes), filename=filename)
-        await channel.send(file=file)
+        await channel.send(content=greeting_text, file=file)
         
         if send_to_dm:
             try:
                 file2 = discord.File(io.BytesIO(image_bytes), filename=filename)
-                await send_to_dm.send(file=file2)
+                await send_to_dm.send(content=greeting_text, file=file2)
                 logger.info(f"Sent DM to {send_to_dm.name}")
             except Exception as e:
                 logger.warning(f"Could not DM: {e}")
         
-        logger.info(f"Sent image as file: {filename}")
+        logger.info(f"Sent greeting with image together: {filename}")
     except Exception as e:
-        logger.error(f"Failed to send as file: {e}")
+        logger.error(f"Failed to send greeting with image: {e}")
+        await channel.send(greeting_text)
 
 intents = discord.Intents.default()
 intents.voice_states = True
@@ -761,16 +763,16 @@ async def on_voice_state_update(member, before, after):
             if channel:
                 try:
                     greeting = random.choice(JOIN_GREETINGS).format(display_name=member.display_name)
-                    await channel.send(greeting)
-                    logger.info(f"Sent greeting to {member.name}")
                     
                     async with aiohttp.ClientSession() as session:
                         gif_url, source, meta = await fetch_random_gif(session, member.id)
                         if gif_url:
-                            await send_image_as_file(channel, session, gif_url, send_to_dm=member)
-                            logger.info(f"Sent welcome NSFW content from {source}")
+                            await send_greeting_with_image(channel, session, greeting, gif_url, send_to_dm=member)
+                            logger.info(f"Sent join greeting with image from {source}")
+                        else:
+                            await channel.send(greeting)
                 except Exception as e:
-                    logger.error(f"Failed to send greeting: {e}")
+                    logger.error(f"Failed to send join greeting: {e}")
     
     elif before.channel is not None and after.channel is None:
         if before.channel.id in VC_IDS:
@@ -778,16 +780,16 @@ async def on_voice_state_update(member, before, after):
             if channel:
                 try:
                     leave_msg = random.choice(LEAVE_GREETINGS).format(display_name=member.display_name)
-                    await channel.send(leave_msg)
-                    logger.info(f"Sent leave message for {member.name}")
                     
                     async with aiohttp.ClientSession() as session:
                         gif_url, source, meta = await fetch_random_gif(session, member.id)
                         if gif_url:
-                            await send_image_as_file(channel, session, gif_url, send_to_dm=member)
-                            logger.info(f"Sent leave NSFW content from {source}")
+                            await send_greeting_with_image(channel, session, leave_msg, gif_url, send_to_dm=member)
+                            logger.info(f"Sent leave greeting with image from {source}")
+                        else:
+                            await channel.send(leave_msg)
                 except Exception as e:
-                    logger.error(f"Failed to send leave content: {e}")
+                    logger.error(f"Failed to send leave greeting: {e}")
 
 @tasks.loop(seconds=120)
 async def check_vc():
@@ -803,8 +805,20 @@ async def check_vc():
                     async with aiohttp.ClientSession() as session:
                         gif_url, source, meta = await fetch_random_gif(session)
                         if gif_url:
-                            await send_image_as_file(channel, session, gif_url)
-                            logger.info(f"Sent NSFW content from {source}")
+                            image_bytes, content_type = await _download_bytes_with_limit(session, gif_url)
+                            if image_bytes:
+                                if len(image_bytes) > DISCORD_MAX_UPLOAD:
+                                    image_bytes = await compress_image(image_bytes)
+                                if image_bytes and len(image_bytes) <= DISCORD_MAX_UPLOAD:
+                                    ext = ".jpg"
+                                    if "gif" in gif_url.lower() or (content_type and "gif" in content_type):
+                                        ext = ".gif"
+                                    elif "png" in gif_url.lower() or (content_type and "png" in content_type):
+                                        ext = ".png"
+                                    filename = f"nsfw{ext}"
+                                    file = discord.File(io.BytesIO(image_bytes), filename=filename)
+                                    await channel.send(file=file)
+                                    logger.info(f"Sent NSFW content from {source}")
                         else:
                             logger.warning("Failed to fetch GIF for VC check")
                 except Exception as e:
@@ -815,7 +829,22 @@ async def nsfw(ctx):
     async with aiohttp.ClientSession() as session:
         gif_url, source, meta = await fetch_random_gif(session, ctx.author.id)
         if gif_url:
-            await send_image_as_file(ctx.channel, session, gif_url)
+            try:
+                image_bytes, content_type = await _download_bytes_with_limit(session, gif_url)
+                if image_bytes:
+                    if len(image_bytes) > DISCORD_MAX_UPLOAD:
+                        image_bytes = await compress_image(image_bytes)
+                    if image_bytes and len(image_bytes) <= DISCORD_MAX_UPLOAD:
+                        ext = ".jpg"
+                        if "gif" in gif_url.lower() or (content_type and "gif" in content_type):
+                            ext = ".gif"
+                        elif "png" in gif_url.lower() or (content_type and "png" in content_type):
+                            ext = ".png"
+                        filename = f"nsfw{ext}"
+                        file = discord.File(io.BytesIO(image_bytes), filename=filename)
+                        await ctx.send(file=file)
+            except:
+                await ctx.send("Failed to fetch NSFW content. Try again.")
         else:
             await ctx.send("Failed to fetch NSFW content. Try again.")
 
