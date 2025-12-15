@@ -39,7 +39,6 @@ VC_IDS = [
     int(os.getenv("VC_ID_1", "1409170559337762980")),
 ]
 VC_CHANNEL_ID = int(os.getenv("VC_CHANNEL_ID", "1371916812903780573"))
-GREETING_MESSAGE = os.getenv("GREETING_MESSAGE", "🔥 Welcome to the NSFW zone! Enjoy the content 🔥")
 
 logging.basicConfig(level=logging.DEBUG if DEBUG_FETCH else logging.INFO)
 logger = logging.getLogger("spiciest-nsfw")
@@ -64,6 +63,132 @@ EXCLUDE_TAGS = [
     "loli", "shota", "child", "minor", "underage", "young", "schoolgirl", "age_gap",
     "pedo", "pedophile", "bestiality", "zoophilia"
 ]
+
+JOIN_GREETINGS = [
+    "🔥 {display_name} enters — confidence detected.",
+    "✨ {display_name} arrived, and attention followed.",
+    "😈 {display_name} joined — bold move.",
+    "👀 {display_name} just stepped in. Not unnoticed.",
+    "🖤 {display_name} is here. Behave.",
+    "💋 {display_name} joined — interesting choice.",
+    "🕶️ {display_name} walks in like they own it.",
+    "🌒 {display_name} entered quietly. Dangerous.",
+    "⚡ {display_name} arrived with presence.",
+    "🥀 {display_name} joined — don't disappoint.",
+    "🧠 {display_name} stepped in. I'm watching.",
+    "🗝️ {display_name} unlocked the room.",
+    "🔥 {display_name} joined — heat follows.",
+    "👑 {display_name} arrived. Act accordingly.",
+    "🌑 {display_name} stepped into my space.",
+    "💎 {display_name} joined — rare energy.",
+    "🩸 {display_name} arrived. Brave.",
+    "🖤 {display_name} is here. Stay sharp.",
+    "🕯️ {display_name} joined — slow and confident.",
+    "🐍 {display_name} slid in smoothly.",
+    "🌙 {display_name} arrived under quiet watch.",
+    "🧿 {display_name} joined. I see you.",
+    "🔮 {display_name} appeared — expected.",
+    "🪶 {display_name} stepped in lightly.",
+    "🎭 {display_name} arrived. Masks on.",
+    "🩶 {display_name} joined — calm energy.",
+    "🔥 {display_name} entered. Control yourself.",
+    "🗝️ {display_name} found the door.",
+    "👁️ {display_name} joined — focus locked.",
+    "🌫️ {display_name} drifted in smoothly.",
+    "🧊 {display_name} arrived cool and composed.",
+    "🖤 {display_name} joined — noticed immediately.",
+    "⚖️ {display_name} entered. Balance shifts.",
+    "🐺 {display_name} joined alone. Respect.",
+    "🌘 {display_name} arrived quietly.",
+    "💼 {display_name} stepped in professionally.",
+    "🕸️ {display_name} entered the web.",
+    "🔥 {display_name} joined — tension rises.",
+    "🪞 {display_name} arrived. Look sharp.",
+    "🧠 {display_name} joined — think carefully.",
+    "🖤 {display_name} entered. Eyes on you.",
+    "🩸 {display_name} joined — bold timing.",
+    "🌑 {display_name} stepped inside.",
+    "💋 {display_name} arrived — tempting.",
+    "🕶️ {display_name} joined with style.",
+    "🔥 {display_name} entered — don't blink.",
+    "👑 {display_name} joined. Hold yourself well.",
+    "🌙 {display_name} arrived under watchful eyes.",
+    "🖤 {display_name} stepped in confidently.",
+    "⚡ {display_name} joined — energy felt.",
+    "🗝️ {display_name} crossed the threshold.",
+    "😈 {display_name} arrived — curious choice.",
+    "🧿 {display_name} joined. Observed.",
+    "🔥 {display_name} entered — composure tested.",
+    "🩶 {display_name} joined quietly.",
+    "👀 {display_name} arrived. I noticed.",
+    "🌒 {display_name} stepped in — interesting.",
+    "🖤 {display_name} joined. Stay aware."
+]
+while len(JOIN_GREETINGS) < 60:
+    JOIN_GREETINGS.append(random.choice(JOIN_GREETINGS))
+
+LEAVE_GREETINGS = [
+    "🌙 {display_name} slips away — silence lingers.",
+    "🖤 {display_name} left. I noticed.",
+    "🌑 {display_name} disappeared quietly.",
+    "👀 {display_name} is gone. Remembered.",
+    "🕯️ {display_name} exited — calm choice.",
+    "😈 {display_name} left already?",
+    "🌫️ {display_name} drifted out.",
+    "🧠 {display_name} stepped away. Thinking?",
+    "🖤 {display_name} vanished smoothly.",
+    "🌒 {display_name} left under watch.",
+    "🗝️ {display_name} closed the door.",
+    "🩶 {display_name} exited calmly.",
+    "🕶️ {display_name} slipped out unnoticed.",
+    "🌙 {display_name} faded into the night.",
+    "🔥 {display_name} left — heat cools.",
+    "🧿 {display_name} exited. Observed.",
+    "🖤 {display_name} stepped away.",
+    "🕸️ {display_name} escaped the web.",
+    "👑 {display_name} left with composure.",
+    "🌑 {display_name} disappeared.",
+    "💎 {display_name} exited — rare move.",
+    "🩸 {display_name} left boldly.",
+    "🧠 {display_name} walked away quietly.",
+    "🌫️ {display_name} slipped into silence.",
+    "🖤 {display_name} is gone for now.",
+    "🌘 {display_name} left without a sound.",
+    "⚖️ {display_name} exited — balance restored.",
+    "🕯️ {display_name} stepped out.",
+    "👁️ {display_name} left. Not forgotten.",
+    "🌙 {display_name} vanished softly.",
+    "🖤 {display_name} exited confidently.",
+    "🔥 {display_name} left — tension fades.",
+    "🧊 {display_name} stepped away coolly.",
+    "🕶️ {display_name} left with style.",
+    "🧿 {display_name} exited. Noted.",
+    "🌑 {display_name} slipped out quietly.",
+    "🩶 {display_name} walked away calmly.",
+    "🕸️ {display_name} escaped.",
+    "👀 {display_name} left — watched.",
+    "🖤 {display_name} disappeared smoothly.",
+    "🌒 {display_name} stepped away.",
+    "🔥 {display_name} exited — control remains.",
+    "🧠 {display_name} left thoughtfully.",
+    "🕯️ {display_name} faded out.",
+    "🌙 {display_name} slipped into the dark.",
+    "🖤 {display_name} left. Silence follows.",
+    "🧿 {display_name} exited cleanly.",
+    "🩸 {display_name} walked away.",
+    "🌑 {display_name} vanished again.",
+    "🕶️ {display_name} exited quietly.",
+    "👑 {display_name} left with grace.",
+    "🖤 {display_name} stepped out calmly.",
+    "🌫️ {display_name} dissolved into quiet.",
+    "🔥 {display_name} left — eyes linger.",
+    "🧠 {display_name} stepped away.",
+    "🌙 {display_name} exited softly.",
+    "🖤 {display_name} gone — remembered.",
+    "👀 {display_name} left. Not ignored."
+]
+while len(LEAVE_GREETINGS) < 60:
+    LEAVE_GREETINGS.append(random.choice(LEAVE_GREETINGS))
 
 def _normalize_text(s: str) -> str:
     return "" if not s else re.sub(r'[\s\-_]+', ' ', s.lower())
@@ -258,6 +383,8 @@ PROVIDER_TERMS = {
     "waifu_pics": ["waifu", "neko", "blowjob"],
     "waifu_im": ["ero", "hentai", "ass", "hass", "hmidriff", "oppai", "hthigh", "paizuri", "ecchi", "selfies"],
     "hmtai": ["hentai", "anal", "ass", "bdsm", "cum", "boobs", "thighs", "pussy", "ahegao", "uniform", "gangbang", "tentacles", "gif", "nsfwNeko", "ero", "yuri", "panties", "zettaiRyouiki"],
+    "nekobot": ["hentai", "hentai_anal", "hass", "hboobs", "hthigh", "paizuri", "tentacle", "pgif"],
+    "nekos_moe": ["hentai", "ecchi", "ero", "oppai", "yuri"],
     "danbooru": ["hentai", "ecchi", "breasts", "thighs", "panties", "ass", "anal", "oral", "cum"],
     "gelbooru": ["hentai", "ecchi", "panties", "thighs", "ass", "bikini", "cleavage"],
     "rule34": ["hentai", "ecchi", "panties", "thighs", "ass", "big_breasts"],
@@ -333,10 +460,10 @@ async def fetch_from_waifu_im(session, positive):
             if resp.status != 200:
                 return None, None, None
             payload = await resp.json()
-            images = payload.get("images") or payload.get("data") or []
+            images = payload.get("images", [])
             if not images: return None, None, None
             img = random.choice(images)
-            gif_url = img.get("url") or img.get("image") or img.get("src")
+            gif_url = img.get("url")
             if not gif_url or filename_has_block_keyword(gif_url): return None, None, None
             if contains_illegal_indicators(json.dumps(img) + " " + (q or "")): return None, None, None
             extract_and_add_tags_from_meta(str(img.get("tags", "")), GIF_TAGS, data)
@@ -357,6 +484,43 @@ async def fetch_from_hmtai(session, positive):
             if contains_illegal_indicators(json.dumps(payload) + " " + (category or "")): return None, None, None
             extract_and_add_tags_from_meta(json.dumps(payload), GIF_TAGS, data)
             return gif_url, f"hmtai_{category}", payload
+    except Exception:
+        return None, None, None
+
+async def fetch_from_nekobot(session, positive):
+    try:
+        category = map_tag_for_provider("nekobot", positive)
+        url = f"https://nekobot.xyz/api/image?type={quote_plus(category)}"
+        async with session.get(url, timeout=REQUEST_TIMEOUT) as resp:
+            if resp.status != 200:
+                return None, None, None
+            payload = await resp.json()
+            if not payload.get("success"):
+                return None, None, None
+            gif_url = payload.get("message")
+            if not gif_url or filename_has_block_keyword(gif_url): return None, None, None
+            if contains_illegal_indicators(json.dumps(payload) + " " + (category or "")): return None, None, None
+            extract_and_add_tags_from_meta(category, GIF_TAGS, data)
+            return gif_url, f"nekobot_{category}", payload
+    except Exception:
+        return None, None, None
+
+async def fetch_from_nekos_moe(session, positive):
+    try:
+        url = "https://nekos.moe/api/v1/random/image?nsfw=true&count=1"
+        async with session.get(url, timeout=REQUEST_TIMEOUT) as resp:
+            if resp.status != 200:
+                return None, None, None
+            payload = await resp.json()
+            images = payload.get("images", [])
+            if not images: return None, None, None
+            img = images[0]
+            img_id = img.get("id")
+            if not img_id: return None, None, None
+            gif_url = f"https://nekos.moe/image/{img_id}.jpg"
+            if contains_illegal_indicators(json.dumps(img)): return None, None, None
+            extract_and_add_tags_from_meta(" ".join(img.get("tags", [])), GIF_TAGS, data)
+            return gif_url, "nekos_moe", img
     except Exception:
         return None, None, None
 
@@ -443,12 +607,14 @@ async def fetch_from_rule34(session, positive):
         return None, None, None
 
 PROVIDERS = [
-    ("hmtai", fetch_from_hmtai, 30),
-    ("rule34", fetch_from_rule34, 25),
-    ("waifu_im", fetch_from_waifu_im, 20),
-    ("danbooru", fetch_from_danbooru, 15),
-    ("gelbooru", fetch_from_gelbooru, 15),
-    ("waifu_pics", fetch_from_waifu_pics, 10),
+    ("hmtai", fetch_from_hmtai, 25),
+    ("nekobot", fetch_from_nekobot, 25),
+    ("rule34", fetch_from_rule34, 20),
+    ("waifu_im", fetch_from_waifu_im, 15),
+    ("nekos_moe", fetch_from_nekos_moe, 10),
+    ("danbooru", fetch_from_danbooru, 10),
+    ("gelbooru", fetch_from_gelbooru, 10),
+    ("waifu_pics", fetch_from_waifu_pics, 5),
 ]
 
 def _hash_url(url):
@@ -501,6 +667,7 @@ async def fetch_random_gif(session, user_id=None):
 intents = discord.Intents.default()
 intents.voice_states = True
 intents.message_content = True
+intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
@@ -516,18 +683,35 @@ async def on_voice_state_update(member, before, after):
             channel = bot.get_channel(VC_CHANNEL_ID)
             if channel:
                 try:
-                    await channel.send(f"{GREETING_MESSAGE} {member.mention}")
+                    greeting = random.choice(JOIN_GREETINGS).format(display_name=member.display_name)
+                    await channel.send(greeting)
                     logger.info(f"Sent greeting to {member.name}")
                     
                     async with aiohttp.ClientSession() as session:
                         gif_url, source, meta = await fetch_random_gif(session, member.id)
                         if gif_url:
                             await channel.send(gif_url)
+                            try:
+                                await member.send(gif_url)
+                                logger.info(f"Sent DM to {member.name}")
+                            except:
+                                logger.warning(f"Could not DM {member.name}")
                             logger.info(f"Sent welcome NSFW content from {source}")
                 except Exception as e:
                     logger.error(f"Failed to send greeting: {e}")
+    
+    elif before.channel is not None and after.channel is None:
+        if before.channel.id in VC_IDS:
+            channel = bot.get_channel(VC_CHANNEL_ID)
+            if channel:
+                try:
+                    leave_msg = random.choice(LEAVE_GREETINGS).format(display_name=member.display_name)
+                    await channel.send(leave_msg)
+                    logger.info(f"Sent leave message for {member.name}")
+                except Exception as e:
+                    logger.error(f"Failed to send leave message: {e}")
 
-@tasks.loop(seconds=60)
+@tasks.loop(seconds=120)
 async def check_vc():
     for vc_id in VC_IDS:
         vc = bot.get_channel(vc_id)
