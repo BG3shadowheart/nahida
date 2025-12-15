@@ -678,7 +678,7 @@ async def compress_image(image_bytes, target_size=DISCORD_MAX_UPLOAD):
         logger.error(f"Compression failed: {e}")
         return image_bytes
 
-async def send_greeting_with_image(channel, session, greeting_text, image_url, send_to_dm=None):
+async def send_greeting_with_image_embed(channel, session, greeting_text, image_url, member, send_to_dm=None):
     try:
         image_bytes, content_type = await _download_bytes_with_limit(session, image_url)
         if not image_bytes or len(image_bytes) > DISCORD_MAX_UPLOAD:
@@ -698,19 +698,37 @@ async def send_greeting_with_image(channel, session, greeting_text, image_url, s
         
         filename = f"nsfw{ext}"
         file = discord.File(io.BytesIO(image_bytes), filename=filename)
-        await channel.send(content=greeting_text, file=file)
         
+        # GREEN COLOR EMBED
+        embed = discord.Embed(
+            description=greeting_text,
+            color=discord.Color.from_rgb(46, 204, 113)  # Green color
+        )
+        embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
+        embed.set_image(url=f"attachment://{filename}")
+        embed.set_footer(text="NSFW Bot")
+        
+        await channel.send(embed=embed, file=file)
+        
+        # Send to DM
         if send_to_dm:
             try:
                 file2 = discord.File(io.BytesIO(image_bytes), filename=filename)
-                await send_to_dm.send(content=greeting_text, file=file2)
+                embed2 = discord.Embed(
+                    description=greeting_text,
+                    color=discord.Color.from_rgb(46, 204, 113)
+                )
+                embed2.set_author(name=member.display_name, icon_url=member.display_avatar.url)
+                embed2.set_image(url=f"attachment://{filename}")
+                embed2.set_footer(text="NSFW Bot")
+                await send_to_dm.send(embed=embed2, file=file2)
                 logger.info(f"Sent DM to {send_to_dm.name}")
             except Exception as e:
                 logger.warning(f"Could not DM: {e}")
         
-        logger.info(f"Sent greeting with image together: {filename}")
+        logger.info(f"Sent greeting embed with image: {filename}")
     except Exception as e:
-        logger.error(f"Failed to send greeting with image: {e}")
+        logger.error(f"Failed to send greeting embed: {e}")
         await channel.send(greeting_text)
 
 intents = discord.Intents.default()
@@ -767,8 +785,8 @@ async def on_voice_state_update(member, before, after):
                     async with aiohttp.ClientSession() as session:
                         gif_url, source, meta = await fetch_random_gif(session, member.id)
                         if gif_url:
-                            await send_greeting_with_image(channel, session, greeting, gif_url, send_to_dm=member)
-                            logger.info(f"Sent join greeting with image from {source}")
+                            await send_greeting_with_image_embed(channel, session, greeting, gif_url, member, send_to_dm=member)
+                            logger.info(f"Sent join greeting embed from {source}")
                         else:
                             await channel.send(greeting)
                 except Exception as e:
@@ -784,8 +802,8 @@ async def on_voice_state_update(member, before, after):
                     async with aiohttp.ClientSession() as session:
                         gif_url, source, meta = await fetch_random_gif(session, member.id)
                         if gif_url:
-                            await send_greeting_with_image(channel, session, leave_msg, gif_url, send_to_dm=member)
-                            logger.info(f"Sent leave greeting with image from {source}")
+                            await send_greeting_with_image_embed(channel, session, leave_msg, gif_url, member, send_to_dm=member)
+                            logger.info(f"Sent leave greeting embed from {source}")
                         else:
                             await channel.send(leave_msg)
                 except Exception as e:
