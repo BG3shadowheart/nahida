@@ -5,6 +5,7 @@ import random
 import hashlib
 import logging
 import re
+import asyncio
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote_plus, urlparse
 import aiohttp
@@ -401,14 +402,6 @@ def map_tag_for_provider(provider: str, tag: str) -> str:
         return random.choice(pool)
     return t or "hentai"
 
-async def _head_url(session, url, timeout=REQUEST_TIMEOUT):
-    try:
-        async with session.head(url, timeout=timeout, allow_redirects=True) as resp:
-            return resp.status, dict(resp.headers)
-    except Exception as e:
-        if DEBUG_FETCH: logger.debug(f"HEAD failed for {url}: {e}")
-        return None, {}
-
 async def _download_bytes_with_limit(session, url, size_limit=HEAD_SIZE_LIMIT, timeout=REQUEST_TIMEOUT):
     try:
         async with session.get(url, timeout=timeout, allow_redirects=True) as resp:
@@ -664,6 +657,60 @@ async def fetch_random_gif(session, user_id=None):
     logger.warning(f"Failed to fetch after {FETCH_ATTEMPTS} attempts")
     return None, None, None
 
+async def compress_image(image_bytes, target_size=DISCORD_MAX_UPLOAD):
+    if not Image:
+        return image_bytes
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        if img.format == "GIF":
+            return image_bytes
+        output = io.BytesIO()
+        quality = 95
+        while quality > 10:
+            output.seek(0)
+            output.truncate()
+            img.save(output, format=img.format or "JPEG", quality=quality, optimize=True)
+            if output.tell() <= target_size:
+                return output.getvalue()
+            quality -= 10
+        return output.getvalue()
+    except Exception as e:
+        logger.error(f"Compression failed: {e}")
+        return image_bytes
+
+async def send_image_as_file(channel, session, image_url, send_to_dm=None):
+    try:
+        image_bytes, content_type = await _download_bytes_with_limit(session, image_url)
+        if not image_bytes or len(image_bytes) > DISCORD_MAX_UPLOAD:
+            if image_bytes and len(image_bytes) > DISCORD_MAX_UPLOAD:
+                image_bytes = await compress_image(image_bytes)
+            if not image_bytes or len(image_bytes) > DISCORD_MAX_UPLOAD:
+                return
+        
+        ext = ".jpg"
+        if "gif" in image_url.lower() or (content_type and "gif" in content_type):
+            ext = ".gif"
+        elif "png" in image_url.lower() or (content_type and "png" in content_type):
+            ext = ".png"
+        elif "webp" in image_url.lower() or (content_type and "webp" in content_type):
+            ext = ".webp"
+        
+        filename = f"nsfw{ext}"
+        file = discord.File(io.BytesIO(image_bytes), filename=filename)
+        await channel.send(file=file)
+        
+        if send_to_dm:
+            try:
+                file2 = discord.File(io.BytesIO(image_bytes), filename=filename)
+                await send_to_dm.send(file=file2)
+                logger.info(f"Sent DM to {send_to_dm.name}")
+            except Exception as e:
+                logger.warning(f"Could not DM: {e}")
+        
+        logger.info(f"Sent image as file: {filename}")
+    except Exception as e:
+        logger.error(f"Failed to send as file: {e}")
+
 intents = discord.Intents.default()
 intents.voice_states = True
 intents.message_content = True
@@ -675,27 +722,54 @@ async def on_ready():
     logger.info(f"Logged in as {bot.user}")
     autosave_task.start()
     check_vc.start()
+    await join_voice_channel()
+
+async def join_voice_channel():
+    await bot.wait_until_ready()
+    for vc_id in VC_IDS:
+        vc = bot.get_channel(vc_id)
+        if vc and isinstance(vc, discord.VoiceChannel):
+            try:
+                if vc.guild.voice_client is None:
+                    await vc.connect()
+                    logger.info(f"Bot joined voice channel: {vc.name}")
+                else:
+                    logger.info(f"Bot already in voice channel: {vc.name}")
+            except Exception as e:
+                logger.error(f"Failed to join VC: {e}")
+
+@tasks.loop(seconds=300)
+async def check_vc_connection():
+    for vc_id in VC_IDS:
+        vc = bot.get_channel(vc_id)
+        if vc and isinstance(vc, discord.VoiceChannel):
+            if vc.guild.voice_client is None or not vc.guild.voice_client.is_connected():
+                try:
+                    await vc.connect()
+                    logger.info(f"Reconnected to VC: {vc.name}")
+                except Exception as e:
+                    logger.error(f"Failed to reconnect to VC: {e}")
 
 @bot.event
 async def on_voice_state_update(member, before, after):
+    if member.id == bot.user.id:
+        return
+    
     if before.channel is None and after.channel is not None:
         if after.channel.id in VC_IDS:
             channel = bot.get_channel(VC_CHANNEL_ID)
             if channel:
                 try:
                     greeting = random.choice(JOIN_GREETINGS).format(display_name=member.display_name)
-                    await channel.send(greeting)
+                    embed = discord.Embed(description=f"**{greeting}**", color=discord.Color.dark_purple())
+                    embed.set_thumbnail(url=member.display_avatar.url)
+                    await channel.send(embed=embed)
                     logger.info(f"Sent greeting to {member.name}")
                     
                     async with aiohttp.ClientSession() as session:
                         gif_url, source, meta = await fetch_random_gif(session, member.id)
                         if gif_url:
-                            await channel.send(gif_url)
-                            try:
-                                await member.send(gif_url)
-                                logger.info(f"Sent DM to {member.name}")
-                            except:
-                                logger.warning(f"Could not DM {member.name}")
+                            await send_image_as_file(channel, session, gif_url, send_to_dm=member)
                             logger.info(f"Sent welcome NSFW content from {source}")
                 except Exception as e:
                     logger.error(f"Failed to send greeting: {e}")
@@ -718,14 +792,14 @@ async def check_vc():
         if not vc or not isinstance(vc, discord.VoiceChannel):
             continue
         
-        if len(vc.members) > 0:
+        if len(vc.members) > 1:
             channel = bot.get_channel(VC_CHANNEL_ID)
             if channel:
                 try:
                     async with aiohttp.ClientSession() as session:
                         gif_url, source, meta = await fetch_random_gif(session)
                         if gif_url:
-                            await channel.send(gif_url)
+                            await send_image_as_file(channel, session, gif_url)
                             logger.info(f"Sent NSFW content from {source}")
                         else:
                             logger.warning("Failed to fetch GIF for VC check")
@@ -737,7 +811,7 @@ async def nsfw(ctx):
     async with aiohttp.ClientSession() as session:
         gif_url, source, meta = await fetch_random_gif(session, ctx.author.id)
         if gif_url:
-            await ctx.send(gif_url)
+            await send_image_as_file(ctx.channel, session, gif_url)
         else:
             await ctx.send("Failed to fetch NSFW content. Try again.")
 
