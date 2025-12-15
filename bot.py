@@ -702,7 +702,7 @@ async def send_greeting_with_image_embed(channel, session, greeting_text, image_
         # GREEN COLOR EMBED
         embed = discord.Embed(
             description=greeting_text,
-            color=discord.Color.from_rgb(46, 204, 113)  # Green color
+            color=discord.Color.from_rgb(220, 53, 69)  # Red color
         )
         embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
         embed.set_image(url=f"attachment://{filename}")
