@@ -759,7 +759,7 @@ LEAVE_GREETINGS = [
     "⚡ {display_name} exited — sparks died but marks remained.",
     "🕯️ {display_name} disappeared into the dark; the night waits."
 ]
-while len(LEAVE_GREETINGS) < 60:
+while len(LEAVE_GREETINGS) < 120:
     LEAVE_GREETINGS.append(random.choice(LEAVE_GREETINGS))
     
 async def send_greeting_with_image_embed(channel, session, greeting_text, image_url, member, send_to_dm=None):
